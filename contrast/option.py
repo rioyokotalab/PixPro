@@ -18,7 +18,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--zip', action='store_true', help='use zipped dataset')
     parser.add_argument('--cache-mode', type=str, default='part', choices=['no', 'full', 'part'],
                         help='cache mode: no for no cache, full for cache all data, part for only cache part of data')
-    parser.add_argument('--dataset', type=str, default='ImageNet', choices=['ImageNet', ], help='dataset type')
+    parser.add_argument('--dataset', type=str, default='ImageNet', choices=['ImageNet', "bdd100k"], help='dataset type')
     parser.add_argument('--ann-file', type=str, default='', help='annotation file')
     parser.add_argument('--image-size', type=int, default=224, help='image crop size')
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')

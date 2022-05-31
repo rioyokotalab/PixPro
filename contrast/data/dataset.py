@@ -2,6 +2,7 @@ import io
 import logging
 import os
 import time
+import random
 
 import torch.distributed as dist
 import torch.utils.data as data
@@ -29,7 +30,7 @@ def find_classes(dir):
     return classes, class_to_idx
 
 
-def make_dataset(dir, class_to_idx, extensions):
+def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False):
     images = []
     dir = os.path.expanduser(dir)
     for target in sorted(os.listdir(dir)):
@@ -37,12 +38,22 @@ def make_dataset(dir, class_to_idx, extensions):
         if not os.path.isdir(d):
             continue
 
+        videos = []
+
         for root, _, fnames in sorted(os.walk(d)):
             for fname in sorted(fnames):
                 if has_file_allowed_extension(fname, extensions):
                     path = os.path.join(root, fname)
                     item = (path, class_to_idx[target])
+                    if is_bdd100k:
+                        videos.append(item)
+                        continue
                     images.append(item)
+        if is_bdd100k:
+            images.append(videos)
+
+    if is_bdd100k:
+        images = VideoSample(images)
 
     return images
 
@@ -65,9 +76,13 @@ def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet'):
 
         return images
 
+    is_bdd100k = dataset == "bdd100k"
+    pre_video_id = 0
+
     # make ImageNet or VOC dataset
     with open(ann_file, "r") as f:
         contents = f.readlines()
+        videos = []
         for line_str in contents:
             path_contents = [c for c in line_str.split('\t')]
             im_file_name = path_contents[0]
@@ -76,9 +91,40 @@ def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet'):
             assert str.lower(os.path.splitext(im_file_name)[-1]) in extensions
             item = (os.path.join(img_prefix, im_file_name), class_index)
 
+            if is_bdd100k:
+                if pre_video_id != class_index:
+                    if len(videos) > 0:
+                        images.append(videos)
+                    videos = []
+                    pre_video_id = class_index
+                videos.append(item)
+                continue
+
             images.append(item)
 
+    if is_bdd100k:
+        if len(videos) > 0:
+            images.append(videos)
+        images = VideoSample(images)
+
     return images
+
+
+class VideoSample(data.Dataset):
+    def __init__(self, samples):
+        super().__init__()
+        self.samples = samples
+
+    def __getitem__(self, index):
+        video = self.samples[index]
+        len_img = len(video)
+        local_i = random.randint(0, len_img - 1)
+        path, target = video[local_i]
+
+        return path, target
+
+    def __len__(self):
+        return len(self.samples)
 
 
 class DatasetFolder(data.Dataset):
@@ -107,7 +153,7 @@ class DatasetFolder(data.Dataset):
         # image folder mode
         if ann_file == '':
             _, class_to_idx = find_classes(root)
-            samples = make_dataset(root, class_to_idx, extensions)
+            samples = make_dataset(root, class_to_idx, extensions, dataset == "bdd100k")
         # zip mode
         else:
             samples = make_dataset_with_ann(os.path.join(root, ann_file),

@@ -14,7 +14,7 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
 
     # dataset
     if args.zip:
-        if args.dataset == 'ImageNet':
+        if args.dataset == 'ImageNet' or args.dataset == "bdd100k":
             train_ann_file = prefix + "_map.txt"
             train_prefix = prefix + ".zip@/"
         else:
@@ -35,6 +35,7 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             train_folder,
             transform=transform,
             two_crop=two_crop,
+            dataset=args.dataset,
             return_coord=return_coord)
 
     # sampler
