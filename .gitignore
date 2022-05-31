@@ -1,3 +1,6 @@
+*.d*
+*.out
+*.o*
 .idea/
 data/
 dataset/
