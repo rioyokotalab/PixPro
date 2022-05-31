@@ -82,6 +82,7 @@ def parse_option(stage='pre-train'):
         parser.add_argument('--pixpro-ins-loss-weight', type=float, default=0., help='loss weight for instance branch')
         parser.add_argument('--pixpro-clamp-value', type=float, default=0.)
         parser.add_argument('--pixpro-transform-layer', type=int, default=0)
+        parser.add_argument('--pixpro-no-headsim', action='store_true')
 
     args = parser.parse_args()
 

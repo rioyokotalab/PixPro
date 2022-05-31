@@ -64,6 +64,11 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     q_start_y = coord_q[:, 1].view(-1, 1, 1)
     k_start_x = coord_k[:, 0].view(-1, 1, 1)
     k_start_y = coord_k[:, 1].view(-1, 1, 1)
+    # if torch.distributed.get_rank() == 0:
+    #     print("q_bin_width:", q_bin_width, "q_bin_height:", q_bin_height)
+    #     print("q_start_x:", q_start_x, "q_start_y:", q_start_y)
+    #     print("k_bin_width:", k_bin_width, "k_bin_height:", k_bin_height)
+    #     print("k_start_x:", k_start_x, "k_start_y:", k_start_y)
 
     # [bs, 1, 1]
     q_bin_diag = torch.sqrt(q_bin_width ** 2 + q_bin_height ** 2)
@@ -80,6 +85,9 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
                              + (center_q_y.view(-1, H * W, 1) - center_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
     pos_mask = (dist_center < pos_ratio).float().detach()
+    # if torch.distributed.get_rank() == 0:
+    #     print("pos_mask_sum_shape:", pos_mask.sum(-1).sum(-1).shape, pos_mask.sum(-1).shape, pos_mask.shape)
+    #     print("pos_mask_sum:", pos_mask.sum(-1).sum(-1), pos_mask.sum(-1))
 
     # [bs, 49, 49]
     logit = torch.bmm(q.transpose(1, 2), k)
@@ -108,6 +116,7 @@ class PixPro(BaseModel):
         self.pixpro_clamp_value     = args.pixpro_clamp_value
         self.pixpro_transform_layer = args.pixpro_transform_layer
         self.pixpro_ins_loss_weight = args.pixpro_ins_loss_weight
+        self.pixpro_no_headsim      = args.pixpro_no_headsim
 
         # create the encoder
         self.encoder = base_encoder(head_type='early_return')
@@ -183,21 +192,24 @@ class PixPro(BaseModel):
         feat_value = F.normalize(feat_value, dim=1)
         feat_value = feat_value.view(N, C, -1)
 
-        # Similarity calculation
-        feat = F.normalize(feat, dim=1)
+        if self.pixpro_no_headsim:
+            feat = feat_value
+        else:
+            # Similarity calculation
+            feat = F.normalize(feat, dim=1)
 
-        # [N, C, H * W]
-        feat = feat.view(N, C, -1)
+            # [N, C, H * W]
+            feat = feat.view(N, C, -1)
 
-        # [N, H * W, H * W]
-        attention = torch.bmm(feat.transpose(1, 2), feat)
-        attention = torch.clamp(attention, min=self.pixpro_clamp_value)
-        if self.pixpro_p < 1.:
-            attention = attention + 1e-6
-        attention = attention ** self.pixpro_p
+            # [N, H * W, H * W]
+            attention = torch.bmm(feat.transpose(1, 2), feat)
+            attention = torch.clamp(attention, min=self.pixpro_clamp_value)
+            if self.pixpro_p < 1.:
+                attention = attention + 1e-6
+            attention = attention ** self.pixpro_p
 
-        # [N, C, H * W]
-        feat = torch.bmm(feat_value, attention.transpose(1, 2))
+            # [N, C, H * W]
+            feat = torch.bmm(feat_value, attention.transpose(1, 2))
 
         return feat.view(N, C, H, W)
 
@@ -217,6 +229,11 @@ class PixPro(BaseModel):
         proj_1 = self.projector(feat_1)
         pred_1 = self.featprop(proj_1)
         pred_1 = F.normalize(pred_1, dim=1)
+        # if torch.distributed.get_rank() == 0:
+        #     print("im_1_shape:", im_1.shape, "im_2_shape:", im_2.shape)
+        #     print("feat_1_shape:", feat_1.shape)
+        #     print("proj_1_shape:", proj_1.shape)
+        #     print("pred_1_shape:", pred_1.shape)
 
         feat_2 = self.encoder(im_2)
         proj_2 = self.projector(feat_2)
