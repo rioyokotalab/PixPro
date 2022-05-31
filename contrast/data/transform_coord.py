@@ -2,6 +2,7 @@ from __future__ import division
 import torch
 import math
 import random
+import numpy as np
 from PIL import Image
 try:
     import accimage
@@ -44,18 +45,63 @@ class Compose(object):
         >>> ])
     """
 
-    def __init__(self, transforms):
+    def __init__(self, transforms, same_two=False):
         self.transforms = transforms
+        self.same_two = same_two
 
-    def __call__(self, img):
-        coord = None
+    def __call__(self, img, coord=None):
+        params, in_params = None, None
+        tmp_len_key = {}
+        if self.same_two and coord is not None:
+            coord, params = coord
+
         for t in self.transforms:
+            if t.__class__.__name__ in tmp_len_key.keys():
+                tmp_len_key[t.__class__.__name__] += 1
+            else:
+                tmp_len_key[t.__class__.__name__] = 1
+            if self.same_two and params is not None:
+                key = t.__class__.__name__
+                len_key = tmp_len_key[key]
+                if len_key > 1:
+                    key += f"{len_key}"
+                in_params = params.get(key, None)
+
             if 'RandomResizedCropCoord' in t.__class__.__name__:
-                img, coord = t(img)
+                if self.same_two:
+                    coord = [coord, in_params]
+                in_img = [img, coord] if self.same_two else img
+                img, coord = t(in_img, same_two=self.same_two)
+            elif 'RandomRescaleCoord' in t.__class__.__name__:
+                if self.same_two:
+                    coord = [coord, in_params]
+                in_img = [img, coord] if self.same_two else img
+                img, coord = t(in_img, same_two=self.same_two)
             elif 'FlipCoord' in t.__class__.__name__:
                 img, coord = t(img, coord)
+                if self.same_two and coord is not None:
+                    coord = [coord, None]
             else:
                 img = t(img)
+                if self.same_two and coord is not None:
+                    coord = [coord, None]
+
+            if self.same_two and coord is not None:
+                coord, in_params = coord
+                if in_params is not None:
+                    key = t.__class__.__name__
+                    len_key = tmp_len_key[key]
+                    if params is None:
+                        params = {}
+                    if len_key > 1:
+                        c_key = key + f"{len_key}"
+                        params[c_key] = in_params[key]
+                    else:
+                        params.update(in_params)
+
+        if self.same_two:
+            coord = [coord, params]
+
         return img, coord
 
     def __repr__(self):
@@ -65,6 +111,56 @@ class Compose(object):
             format_string += '    {0}'.format(t)
         format_string += '\n)'
         return format_string
+
+
+class RandomRescaleCoord(object):
+    """rescale an image and label with in target scale
+    PIL image version"""
+    def __init__(self, min_scale=0.5, max_scale=2.0, step_size=0.25):
+        """initialize
+        Args:
+            min_scale: Min target scale.
+            max_scale: Max target scale.
+        """
+        self.min_scale = min_scale
+        self.max_scale = max_scale
+        self.step_size = step_size
+        # discrete scales
+        if (max_scale - min_scale) > step_size and step_size > 0.05:
+            self.num_steps = int((max_scale - min_scale) / step_size + 1)
+            self.scale_steps = np.linspace(self.min_scale, self.max_scale,
+                                           self.num_steps)
+        elif (max_scale - min_scale) > step_size and step_size < 0.05:
+            self.num_steps = 0
+            self.scale_steps = np.array([min_scale])
+        else:
+            self.num_steps = 1
+            self.scale_steps = np.array([min_scale])
+
+    def __call__(self, img, same_two=False):
+        """call method"""
+        if same_two:
+            img, coord = img
+            coord, params = coord
+        width, height = img.size
+
+        if not same_two or params is None:
+            # random scale
+            if self.num_steps > 0:
+                index = random.randint(0, self.num_steps - 1)
+                scale_now = self.scale_steps[index]
+            else:
+                scale_now = random.uniform(self.min_scale, self.max_scale)
+        else:
+            scale_now = params
+        new_width, new_height = int(scale_now * width), int(scale_now * height)
+        # resize
+        img = img.resize((new_width, new_height), Image.BICUBIC)
+        if same_two:
+            params = {self.__class__.__name__: scale_now}
+            coord = [coord, params]
+
+        return img, coord
 
 
 class RandomHorizontalFlipCoord(object):
@@ -196,7 +292,7 @@ class RandomResizedCropCoord(object):
         j = (width - w) // 2
         return i, j, h, w, height, width
 
-    def __call__(self, img):
+    def __call__(self, img, same_two=False):
         """
         Args:
             img (PIL Image): Image to be cropped and resized.
@@ -204,9 +300,25 @@ class RandomResizedCropCoord(object):
         Returns:
             PIL Image: Randomly cropped and resized image.
         """
-        i, j, h, w, height, width = self.get_params(img, self.scale, self.ratio)
+        # rank = torch.distributed.get_rank()
+        if same_two:
+            img, coord = img
+            coord, params = coord
+            # if rank == 0:
+            #     print(self.__class__.__name__, "params:", params)
+        if not same_two or params is None:
+            i, j, h, w, height, width = self.get_params(img, self.scale, self.ratio)
+        else:
+            i, j, h, w, height, width = params
+        # if same_two:
+        #     if rank == 0:
+        #         print(self.__class__.__name__, "params:", params)
+        params = [i, j, h, w, height, width]
         coord = torch.Tensor([float(j) / (width - 1), float(i) / (height - 1),
                               float(j + w - 1) / (width - 1), float(i + h - 1) / (height - 1)])
+        if same_two:
+            params = {self.__class__.__name__: params}
+            coord = [coord, params]
         return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), coord
 
     def __repr__(self):
