@@ -26,7 +26,7 @@ mpirun ${MPI_OPTS} \
     --crop 0.08 \
     --aug BYOL \
     --dataset ImageNet \
-    --batch-size 16 \
+    --batch-size 128 \
     \
     --model PixPro \
     --arch resnet50 \
