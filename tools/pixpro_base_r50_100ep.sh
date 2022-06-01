@@ -4,9 +4,12 @@ set -e
 set -x
 
 data_dir="./data/imagenet/"
-output_dir="./output/pixpro_base_r50_100ep"
+output_dir=${1:-"./output/pixpro_base_r50_100ep"}
 
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_port 12348 --nproc_per_node=8 \
+MASTER_ADDR=$2
+MASTER_PORT=$3
+
+CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master_addr $MASTER_ADDR --master_port $MASTER_PORT --nproc_per_node=8 \
     main_pretrain.py \
     --data-dir ${data_dir} \
     --output-dir ${output_dir} \
