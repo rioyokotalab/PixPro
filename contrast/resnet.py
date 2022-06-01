@@ -4,7 +4,8 @@ import torch.nn as nn
 
 __all__ = ['ResNet', 'resnet18', 'resnet34', 'resnet50', 'resnet101', 'resnet152',
            'resnet18_d', 'resnet34_d', 'resnet50_d', 'resnet101_d', 'resnet152_d',
-           'resnet50_16s', 'resnet50_w2x', 'resnext101_32x8d', 'resnext152_32x8d']
+           'resnet50_16s', 'resnet50_w2x', 'resnext101_32x8d', 'resnext152_32x8d',
+           'resnet50_dil']
 
 
 def conv3x3(in_planes, out_planes, stride=1):
@@ -102,7 +103,8 @@ class ResNet(nn.Module):
                  groups=1, width_per_group=64,
                  mid_dim=1024, low_dim=128,
                  avg_down=False, deep_stem=False,
-                 head_type='mlp_head', layer4_dilation=1):
+                 head_type='mlp_head', layer4_dilation=1,
+                 layer3_dilation=1):
         super(ResNet, self).__init__()
         self.avg_down = avg_down
         self.inplanes = 64 * width
@@ -127,11 +129,16 @@ class ResNet(nn.Module):
         self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block, self.base, layers[0])
         self.layer2 = self._make_layer(block, self.base * 2, layers[1], stride=2)
-        self.layer3 = self._make_layer(block, self.base * 4, layers[2], stride=2)
+        if layer3_dilation == 1:
+            self.layer3 = self._make_layer(block, self.base * 4, layers[2], stride=2)
+        elif layer3_dilation == 2:
+            self.layer3 = self._make_layer(block, self.base * 4, layers[2], stride=1, dilation=2)
         if layer4_dilation == 1:
             self.layer4 = self._make_layer(block, self.base * 8, layers[3], stride=2)
         elif layer4_dilation == 2:
             self.layer4 = self._make_layer(block, self.base * 8, layers[3], stride=1, dilation=2)
+        elif layer4_dilation == 4:
+            self.layer4 = self._make_layer(block, self.base * 8, layers[3], stride=1, dilation=4)
         else:
             raise NotImplementedError
         self.avgpool = nn.AvgPool2d(7, stride=1)
@@ -266,6 +273,10 @@ def resnet50_16s(**kwargs):
 
 def resnet50_d(**kwargs):
     return ResNet(Bottleneck, [3, 4, 6, 3], deep_stem=True, avg_down=True, **kwargs)
+
+
+def resnet50_dil(**kwargs):
+    return ResNet(Bottleneck, [3, 4, 6, 3], layer4_dilation=4, layer3_dilation=2, **kwargs)
 
 
 def resnet101(**kwargs):
