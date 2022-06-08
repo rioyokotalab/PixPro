@@ -22,6 +22,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--ann-file', type=str, default='', help='annotation file')
     parser.add_argument('--image-size', type=int, default=224, help='image crop size')
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
+    parser.add_argument('--n-frames', type=int, default=6, help='num of frames to load if dataset is video')
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')
