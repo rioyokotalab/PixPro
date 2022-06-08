@@ -44,12 +44,16 @@ def regression_loss_same(q, k):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
+    # if torch.distributed.get_rank() == 0:
+    #     print("in same loss")
+
     N, C, H, W = q.shape
+    device = q.device
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
     k = k.view(N, C, -1)
 
-    diag_mask = torch.diag(torch.ones(H * W, dtype=torch.bool))
+    diag_mask = torch.diag(torch.ones(H * W, dtype=torch.bool)).to(device)
     pos_mask = diag_mask
     # if torch.distributed.get_rank() == 0:
     #     print("pos_mask_sum_shape:", pos_mask.sum(-1).sum(-1).shape, pos_mask.sum(-1).shape, pos_mask.shape)

@@ -184,7 +184,7 @@ class DatasetFolder(data.Dataset):
         self.extensions = extensions
 
         self.samples = samples
-        self.labels = [y_1k for _, y_1k in samples]
+        self.labels = [y_1k if not isinstance(y_1k, list) else y_1k[0] for _, y_1k in samples]
         self.classes = list(set(self.labels))
 
         self.transform = transform
