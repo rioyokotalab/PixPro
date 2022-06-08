@@ -51,7 +51,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False):
     k = k.view(N, C, -1)
     if is_flowe:
         max_norm_diag = (1 / H)**2 + (1 / W)**2
-        pos_ratio = tensor.sqrt(torch.tensor(max_norm_diag)) / 2
+        pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
 
     # generate center_coord, width, height
     # [1, 7, 7]
