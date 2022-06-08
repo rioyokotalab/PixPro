@@ -12,6 +12,7 @@ ckpts/
 *.jpg
 tmp*.py
 *.pdf
+!contrast/data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
