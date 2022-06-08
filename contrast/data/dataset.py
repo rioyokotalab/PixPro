@@ -339,7 +339,8 @@ class ImageFolder(DatasetFolder):
         images = self.loader(path)
         if not isinstance(images, list):
             images = [images]
-            target = [target]
+        if isinstance(target, list):
+            target = target[0]
         coord = None
 
         if self.transform is not None:
@@ -354,7 +355,7 @@ class ImageFolder(DatasetFolder):
             img, coord = img
 
         if self.target_transform is not None:
-            target = self.target_transform(target[0], coord=coord)
+            target = self.target_transform(target, coord=coord)
 
         if self.two_crop:
             if isinstance(self.transform, tuple) and len(self.transform) == 2:
