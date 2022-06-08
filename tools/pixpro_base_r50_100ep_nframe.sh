@@ -3,7 +3,7 @@
 set -e
 set -x
 
-data_dir="./data/imagenet"
+data_dir="./data/bdd100k/images"
 output_dir=${1:-"./output/pixpro_base_r50_100ep"}
 
 MASTER_ADDR=$2
@@ -15,10 +15,12 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     --output-dir ${output_dir} \
     \
     --cache-mode no \
-    --crop 0.08 \
-    --aug BYOL \
-    --dataset ImageNet \
-    --batch-size 128 \
+    --crop 1.0 \
+    --aug mySimCLR \
+    --dataset "bdd100k" \
+    --batch-size 16 \
+    --image-size 1024 \
+    --n-frame 6 \
     \
     --model PixPro \
     --arch resnet50 \
@@ -40,5 +42,5 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     --pixpro-pos-ratio 0.7 \
     --pixpro-transform-layer 1 \
     --pixpro-ins-loss-weight 0. \
-    --flowe-loss
+    # --flowe-loss
     # --zip --cache-mode no \
