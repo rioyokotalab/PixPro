@@ -41,7 +41,7 @@ class MLP2d(nn.Module):
         return x
 
 
-def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
+def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
@@ -49,6 +49,9 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
     k = k.view(N, C, -1)
+    if is_flowe:
+        max_norm_diag = (1 / H)**2 + (1 / W)**2
+        pos_ratio = tensor.sqrt(torch.tensor(max_norm_diag)) / 2
 
     # generate center_coord, width, height
     # [1, 7, 7]
@@ -117,6 +120,7 @@ class PixPro(BaseModel):
         self.pixpro_transform_layer = args.pixpro_transform_layer
         self.pixpro_ins_loss_weight = args.pixpro_ins_loss_weight
         self.pixpro_no_headsim      = args.pixpro_no_headsim
+        self.flowe_loss             = args.flowe_loss
 
         # create the encoder
         self.encoder = base_encoder(head_type='early_return')
@@ -271,8 +275,8 @@ class PixPro(BaseModel):
                                                  dim=1)
 
         # compute loss
-        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio) \
-            + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio)
+        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio, self.flowe_loss) \
+            + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio, self.flowe_loss)
 
         if self.pixpro_ins_loss_weight > 0.:
             loss_instance = self.regression_loss(pred_instance_1, proj_instance_2_ng) + \
