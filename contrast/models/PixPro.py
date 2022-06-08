@@ -40,8 +40,7 @@ class MLP2d(nn.Module):
 
         return x
 
-
-def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False):
+def regression_loss_same(q, k):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
@@ -49,8 +48,34 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False):
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
     k = k.view(N, C, -1)
+
+    diag_mask = torch.diag(torch.ones(H * W, dtype=torch.bool))
+    pos_mask = diag_mask
+    # if torch.distributed.get_rank() == 0:
+    #     print("pos_mask_sum_shape:", pos_mask.sum(-1).sum(-1).shape, pos_mask.sum(-1).shape, pos_mask.shape)
+    #     print("pos_mask_sum:", pos_mask.sum(-1).sum(-1), pos_mask.sum(-1))
+
+    # [bs, 49, 49]
+    logit = torch.bmm(q.transpose(1, 2), k)
+
+    loss = (logit * pos_mask).sum(-1).sum(-1) / (pos_mask.sum(-1).sum(-1) + 1e-6)
+
+    return -2 * loss.mean()
+
+
+def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_loss=False):
+    """ q, k: N * C * H * W
+        coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
+    """
+    if same_loss:
+        return regression_loss_same(q, k)
+
+    N, C, H, W = q.shape
+    # [bs, feat_dim, 49]
+    q = q.view(N, C, -1)
+    k = k.view(N, C, -1)
     if is_flowe:
-        max_norm_diag = (1 / H)**2 + (1 / W)**2
+        max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
 
     # generate center_coord, width, height
@@ -121,6 +146,12 @@ class PixPro(BaseModel):
         self.pixpro_ins_loss_weight = args.pixpro_ins_loss_weight
         self.pixpro_no_headsim      = args.pixpro_no_headsim
         self.flowe_loss             = args.flowe_loss
+
+
+        self.same_loss = False
+        if self.flowe_loss and args.aug in ["mySimCLR", "myBYOL"]:
+            self.same_loss = True
+
 
         # create the encoder
         self.encoder = base_encoder(head_type='early_return')
@@ -275,8 +306,8 @@ class PixPro(BaseModel):
                                                  dim=1)
 
         # compute loss
-        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio, self.flowe_loss) \
-            + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio, self.flowe_loss)
+        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio, self.flowe_loss, self.same_loss) \
+            + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio, self.flowe_loss, self.same_loss)
 
         if self.pixpro_ins_loss_weight > 0.:
             loss_instance = self.regression_loss(pred_instance_1, proj_instance_2_ng) + \
