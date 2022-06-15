@@ -4,7 +4,8 @@ set -e
 set -x
 
 data_dir="./data/imagenet/"
-output_dir=${1:-"./output/pixpro_base_r50_100ep"}
+date_str=$(date '+%Y%m%d_%H%M%S')
+output_dir=${1:-"./output/pixpro_base_r50_100ep/$date_str"}
 
 MASTER_ADDR=$2
 MASTER_PORT=$3
@@ -31,7 +32,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     --epochs 100 \
     --amp-opt-level O1 \
     \
-    --save-freq 10 \
+    --print-freq 1 \
+    --save-freq 1 \
     --auto-resume \
     \
     --pixpro-p 2 \
