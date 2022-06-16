@@ -119,7 +119,9 @@ def flowe_loss(q, k, coord_q, coord_k):
     grid_k = grid_k.permute(0, 2, 3, 1)
 
     q_mask = q.permute(0, 2, 3, 1)[pos_mask]
+    # [bs, feat_dim, 7, 7]
     k_mask = F.grid_sample(k, grid_k, align_corners=True)
+
     k_mask = k_mask.permute(0, 2, 3, 1)[pos_mask]
     if torch.distributed.get_rank() == 0:
         print("q_mask", q_mask.shape)
@@ -138,13 +140,14 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
         return regression_loss_same(q, k)
 
     N, C, H, W = q.shape
-    # [bs, feat_dim, 49]
-    q = q.view(N, C, -1)
-    k = k.view(N, C, -1)
     if is_flowe:
         # max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         # pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
         return flowe_loss(q, k, coord_q, coord_k)
+
+    # [bs, feat_dim, 49]
+    q = q.view(N, C, -1)
+    k = k.view(N, C, -1)
 
     # generate center_coord, width, height
     # [1, 7, 7]
