@@ -73,9 +73,6 @@ def flowe_loss(q, k, coord_q, coord_k):
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
     N, C, H, W = q.shape
-    # [bs, feat_dim, 49]
-    q = q.view(N, C, -1)
-    k = k.view(N, C, -1)
 
     # generate center_coord, width, height
     # [1, 7, 7]
@@ -113,10 +110,10 @@ def flowe_loss(q, k, coord_q, coord_k):
     pos_mask_y = torch.abs(relative_center_q_y_norm) < 1
     pos_mask = pos_mask_x & pos_mask_y
 
-    # [bs, 2, 7, 7]
-    grid_k = torch.stack(relative_center_q_x_norm, relative_center_q_y_norm)
+    # [2, bs, 7, 7]
+    grid_k = torch.stack([relative_center_q_x_norm, relative_center_q_y_norm])
     # [bs, 7, 7, 2]
-    grid_k = grid_k.permute(0, 2, 3, 1)
+    grid_k = grid_k.permute(1, 2, 3, 0)
 
     q_mask = q.permute(0, 2, 3, 1)[pos_mask]
     # [bs, feat_dim, 7, 7]
