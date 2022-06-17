@@ -120,9 +120,9 @@ def flowe_loss(q, k, coord_q, coord_k):
     k_mask = F.grid_sample(k, grid_k, align_corners=True)
 
     k_mask = k_mask.permute(0, 2, 3, 1)[pos_mask]
-    if torch.distributed.get_rank() == 0:
-        print("q_mask", q_mask.shape)
-        print("k_mask", k_mask.shape)
+    # if torch.distributed.get_rank() == 0:
+    #     print("q_mask", q_mask.shape)
+    #     print("k_mask", k_mask.shape)
 
     loss = F.cosine_similarity(q_mask, k_mask, -1, 1e-6)
 
@@ -217,8 +217,8 @@ class PixPro(BaseModel):
 
 
         self.same_loss = False
-        if self.flowe_loss and args.aug in ["mySimCLR", "myBYOL"]:
-            self.same_loss = True
+        # if self.flowe_loss and args.aug in ["mySimCLR", "myBYOL"]:
+        #     self.same_loss = True
 
 
         # create the encoder

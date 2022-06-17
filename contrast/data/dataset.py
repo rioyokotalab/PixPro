@@ -8,9 +8,12 @@ import warnings
 import torch.distributed as dist
 import torch.utils.data as data
 from PIL import Image
+from PIL import ImageFile
 from pycocotools.coco import COCO
 
 from .zipreader import is_zip_path, ZipReader
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 def has_file_allowed_extension(filename, extensions):
