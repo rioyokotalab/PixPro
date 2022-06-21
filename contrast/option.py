@@ -13,7 +13,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--data-dir', type=str, default='./data', help='dataset director')
     parser.add_argument('--crop', type=float, default=0.2 if stage == 'pre-train' else 0.08, help='minimum crop')
     parser.add_argument('--aug', type=str, default='NULL',
-                        choices=['NULL', 'InstDisc', 'MoCov2', 'SimCLR', 'RandAug', 'BYOL', 'val', 'mySimCLR', 'myBYOL'],
+                        choices=['NULL', 'InstDisc', 'MoCov2', 'SimCLR', 'RandAug', 'BYOL', 'val', 'mySimCLR', 'myBYOL', 'PreprocessSimCLR', 'PreprocessBYOL'],
                         help='which augmentation to use.')
     parser.add_argument('--zip', action='store_true', help='use zipped dataset')
     parser.add_argument('--cache-mode', type=str, default='part', choices=['no', 'full', 'part'],
