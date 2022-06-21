@@ -99,6 +99,50 @@ def get_transform(aug_type, crop, image_size=224):
             transforms.ToTensor(),
             normalize
         ])
+    elif aug_type == 'PreprocessSimCLR':  # used in SimCLR and PIC
+        preprocess = transform_coord.Compose([
+            transforms.Resize((1080, 1920)),
+            transform_coord.RandomRescaleCoord(min_scale=0.75, max_scale=1.25, step_size=0.0),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(1., 1.)),
+        ], same_two=True)
+        transform = transform_coord.Compose([
+            preprocess,
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomHorizontalFlipCoord(),
+            transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomApply([GaussianBlur()], p=0.5),
+            transforms.ToTensor(),
+            normalize,
+        ])
+    elif aug_type == 'PreprocessBYOL':
+        preprocess = transform_coord.Compose([
+            transforms.Resize((1080, 1920)),
+            transform_coord.RandomRescaleCoord(min_scale=0.75, max_scale=1.25, step_size=0.0),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(1., 1.)),
+        ], same_two=True)
+        transform_1 = transform_coord.Compose([
+            preprocess,
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomHorizontalFlipCoord(),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomApply([GaussianBlur()], p=1.0),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        transform_2 = transform_coord.Compose([
+            preprocess,
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomHorizontalFlipCoord(),
+            transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
+            transforms.RandomGrayscale(p=0.2),
+            transforms.RandomApply([GaussianBlur()], p=0.1),
+            transforms.RandomApply([ImageOps.solarize], p=0.2),
+            transforms.ToTensor(),
+            normalize,
+        ])
+        transform = (transform_1, transform_2)
     elif aug_type == 'mySimCLR':  # used in SimCLR and PIC
         transform = transform_coord.Compose([
             transforms.Resize((1080, 1920)),
