@@ -52,7 +52,8 @@ class Compose(object):
     def __call__(self, img, coord=None):
         params, in_params = None, None
         tmp_len_key = {}
-        if self.same_two and coord is not None:
+        is_same_two_coord = isinstance(coord, list)
+        if is_same_two_coord:
             coord, params = coord
 
         for t in self.transforms:
@@ -67,7 +68,14 @@ class Compose(object):
                     key += f"{len_key}"
                 in_params = params.get(key, None)
 
-            if 'RandomResizedCropCoord' in t.__class__.__name__:
+            if isinstance(t, Compose):
+                t_same_two = t.same_two
+                if self.same_two:
+                    coord = [coord, in_params]
+                elif t_same_two:
+                    coord = [coord, params]
+                img, coord = t(img, coord=coord)
+            elif 'RandomResizedCropCoord' in t.__class__.__name__:
                 if self.same_two:
                     coord = [coord, in_params]
                 in_img = [img, coord] if self.same_two else img

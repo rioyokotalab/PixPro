@@ -325,11 +325,11 @@ class ImageFolder(DatasetFolder):
         self.two_crop = two_crop
         self.return_coord = return_coord
         self.same_two = False
-        if transform is not None:
-            if isinstance(self.transform, tuple) and len(self.transform) == 2:
-                self.same_two = transform[0].same_two
-            else:
-                self.same_two = transform.same_two
+        # if transform is not None:
+        #     if isinstance(self.transform, tuple) and len(self.transform) == 2:
+        #         self.same_two = transform[0].same_two
+        #     else:
+        #         self.same_two = transform.same_two
 
     def __getitem__(self, index):
         """
@@ -354,8 +354,11 @@ class ImageFolder(DatasetFolder):
         else:
             img = images[0]
 
-        if self.same_two and isinstance(img, tuple):
-            img, coord = img
+        if isinstance(img, tuple):
+            tmp_img, coord = img
+            self.same_two = isinstance(coord, list)
+            if self.same_two:
+                img = tmp_img
 
         if self.target_transform is not None:
             target = self.target_transform(target, coord=coord)
