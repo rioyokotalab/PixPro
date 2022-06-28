@@ -56,16 +56,22 @@ if __name__ == "__main__":
                 save_files.append(file_or_dir)
 
     tf_logs = sorted(tf_logs)
+    num_tf_log = len(tf_logs)
+    is_make_local_tf_dir = num_tf_log > 1
     for i, tf_log in enumerate(tf_logs):
         wandb_id = None if args.ids is None else args.ids[i]
-        local_tf_dirname = f"tf{i+1}"
-        local_wandb_name = f"{wandb_name}_{local_tf_dirname}"
+        local_wandb_name = wandb_name
+        if is_make_local_tf_dir:
+            local_tf_dirname = f"tf{i+1}"
+            local_wandb_name = f"{wandb_name}_{local_tf_dirname}"
         run = wandb.init(entity="tomo",
                          project=args.project,
                          name=local_wandb_name,
                          id=wandb_id)
         wandb_id = run.id
-        dirname = os.path.join(common_tf_log_dir, local_tf_dirname)
+        dirname = common_tf_log_dir
+        if is_make_local_tf_dir:
+            dirname = os.path.join(common_tf_log_dir, local_tf_dirname)
         if not os.path.isdir(dirname):
             os.makedirs(dirname, exist_ok=True)
         # wandb_id = local_wandb_name
@@ -82,7 +88,8 @@ if __name__ == "__main__":
                 if i == 0:
                     print("save file:", save_file, file=sys.stderr)
                     wandb.save(save_file, base_path=root)
-                    for tf_log in tf_logs:
-                        print("save tf file:", tf_log, file=sys.stderr)
-                        wandb.save(tf_log, base_path=root)
+            if i == 0:
+                for tf_log in tf_logs:
+                    print("save tf file:", tf_log, file=sys.stderr)
+                    wandb.save(tf_log, base_path=root)
         run.finish()

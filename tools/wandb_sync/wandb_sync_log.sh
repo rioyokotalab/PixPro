@@ -47,7 +47,9 @@ do
         local_t_path=${local_t##* }
         local_tf_log=${local_tf_log##* }
         local_wandb_id=$(echo ${local_wandb_id} | sed -e "s/[\r\n]\+//g")
-        cp "$local_tf_log" "$local_t_path"
+        if [ "$local_t_path" != "$t_path" ];then
+            cp "$local_tf_log" "$local_t_path"
+        fi
         # echo "$local_wandb_id $local_t_path"
         tf_log=$(find "$local_t_path" -name "events.*")
         if [ -f "$tf_log" ];then
