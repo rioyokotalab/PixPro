@@ -47,6 +47,8 @@ do
         local_t_path=${local_t##* }
         local_tf_log=${local_tf_log##* }
         local_wandb_id=$(echo ${local_wandb_id} | sed -e "s/[\r\n]\+//g")
+        local_t_path=$(echo ${local_t_path} | sed -e "s/[\r\n]\+//g")
+        local_tf_log=$(echo ${local_tf_log} | sed -e "s/[\r\n]\+//g")
         if [ "$local_t_path" != "$t_path" ];then
             cp "$local_tf_log" "$local_t_path"
         fi

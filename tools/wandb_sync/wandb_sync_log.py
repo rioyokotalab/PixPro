@@ -2,7 +2,6 @@ import argparse
 import os
 import sys
 import glob
-from collections import defaultdict
 import json
 
 import wandb
@@ -52,6 +51,8 @@ if __name__ == "__main__":
                 is_new_tf_logs = common_tf_log_dir in file_or_dir
                 if not is_new_tf_logs:
                     tf_logs.append(file_or_dir)
+                else:
+                    save_files.append(file_or_dir)
             elif is_require_files:
                 save_files.append(file_or_dir)
 
@@ -63,8 +64,8 @@ if __name__ == "__main__":
         local_wandb_name = wandb_name
         if is_make_local_tf_dir:
             local_tf_dirname = f"tf{i+1}"
-            local_wandb_name = f"{wandb_name}_{local_tf_dirname}"
-        run = wandb.init(entity="tomo",
+            local_wandb_name = f"{wandb_name}_{local_tf_dirname}/{num_tf_log}"
+        run = wandb.init(entity="tomotakah6",
                          project=args.project,
                          name=local_wandb_name,
                          id=wandb_id)
@@ -88,8 +89,3 @@ if __name__ == "__main__":
                 if i == 0:
                     print("save file:", save_file, file=sys.stderr)
                     wandb.save(save_file, base_path=root)
-            if i == 0:
-                for tf_log in tf_logs:
-                    print("save tf file:", tf_log, file=sys.stderr)
-                    wandb.save(tf_log, base_path=root)
-        run.finish()
