@@ -24,7 +24,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--root_path",
                         default="/home/tomo/ssl_pj/pixpro_pj/PixPro/output")
-    parser.add_argument("--project", default="detectron2")
+    parser.add_argument("--project", default="PixPro")
     parser.add_argument("--target_path", default="")
     parser.add_argument("--ids", nargs="+", default=None)
     parser.add_argument("--upload", action="store_true")
