@@ -67,12 +67,24 @@ def regression_loss_same(q, k):
 
     return -2 * loss.mean()
 
+def flow_loss_dataset(q, k, coord_q, coord_k mask):
+    q_valid = F.grid_sample(q, coord_q.permute(0, 2, 3, 1),
+                             align_corners=True).permute(0, 2, 3, 1)[mask]
+    k_valid = F.grid_sample(k, coord_k.permute(0, 2, 3, 1),
+                             align_corners=True).permute(0, 2, 3, 1)[mask]
+    loss = F.cosine_similarity(q_valid, k_valid, -1, eps=1e-6) 
+    return loss.mean()
+
 
 def flowe_loss(q, k, coord_q, coord_k):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
     N, C, H, W = q.shape
+
+    if isinstance(coord_q, list):
+        coord_q, _ = coord_q
+        coord_k, _ = coord_k
 
     # generate center_coord, width, height
     # [1, 7, 7]
@@ -133,6 +145,8 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
+    if isinstance(coord_q, list):
+        return flow_loss_dataset(q, k, coord_q, coord_k)
     if same_loss:
         return regression_loss_same(q, k)
 
@@ -141,6 +155,11 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
         # max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         # pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
         return flowe_loss(q, k, coord_q, coord_k)
+
+    if isinstance(coord_q, list):
+        coord_q, mask = coord_q
+        coord_k, mask = coord_k
+        mask = mask & mask
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)

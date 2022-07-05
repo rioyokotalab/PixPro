@@ -3,6 +3,8 @@ from PIL import ImageFilter, ImageOps
 from torchvision import transforms
 from .rand_augment import rand_augment_transform
 from . import transform_coord
+from .augmentations import flow_augmentations
+from .augmentations import color_augmentations
 
 
 class GaussianBlur(object):
@@ -180,8 +182,42 @@ def get_transform(aug_type, crop, image_size=224):
             normalize,
         ], same_two=True)
         transform = (transform_1, transform_2)
+    elif aug_type == 'mySimCLRCoord':
+        transform = flow_augmentations.Compose([
+            flow_augmentations.FlowAugmentationWrapper(transforms.ToTensor()),
+            flow_augmentations.RandomRescale(crop, 1.0, 0),
+            flow_augmentations.RandomResizedCrop(image_size),
+            flow_augmentations.RandomHorizontalFlip(),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomGrayscale(p=0.2)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomApply([GaussianBlur()], p=0.5)),
+            flow_augmentations.FlowAugmentationWrapper(normalize),
+        ])
+    elif aug_type == 'myBYOLCoord':
+        transform_1 = flow_augmentations.Compose([
+            flow_augmentations.FlowAugmentationWrapper(transforms.ToTensor()),
+            flow_augmentations.RandomRescale(crop, 1.0, 0),
+            flow_augmentations.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            flow_augmentations.RandomHorizontalFlipCoord(),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomGrayscale(p=0.2)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomApply([color_augmentations.GaussianBlur(image_size[0], image_size[1], sigma=(0.1, 2))], p=1.0)),
+            flow_augmentations.FlowAugmentationWrapper(normalize)
+        ])
+        transform_2 = transform_coord.Compose([
+            flow_augmentations.FlowAugmentationWrapper(transforms.ToTensor()),
+            flow_augmentations.RandomRescale(crop, 1.0, 0),
+            flow_augmentations.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            flow_augmentations.RandomHorizontalFlipCoord(),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomGrayscale(p=0.2)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomApply([color_augmentations.GaussianBlur(image_size[0], image_size[1], sigma=(0.1, 2))], p=0.1)),
+            flow_augmentations.FlowAugmentationWrapper(transforms.RandomSolarize(125, 0.2)),
+            flow_augmentations.FlowAugmentationWrapper(normalize)
+        ])
+        transform = (transform_1, transform_2)
     else:
-        supported = '[InstDisc, MoCov2, SimCLR, BYOL, RandAug, NULL, val, mySimCLR, myBYOL]'
+        supported = '[InstDisc, MoCov2, SimCLR, BYOL, RandAug, NULL, val, mySimCLR, myBYOL, myBYOLCoord, mySimCLRCoord]'
         raise NotImplementedError(f'aug_type "{aug_type}" not supported. Should in {supported}')
 
     return transform
