@@ -59,6 +59,7 @@ def parse_option(stage='pre-train'):
                         help='mixed precision opt level, if O0, no amp is used')
     parser.add_argument('--start-epoch', type=int, default=1, help='used for resume')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
+    parser.add_argument('--debug-epochs', type=int, default=10, help='number of training epochs break')
 
     # misc
     parser.add_argument('--output-dir', type=str, default='./output', help='output director')
