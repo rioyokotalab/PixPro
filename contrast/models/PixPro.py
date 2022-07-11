@@ -67,7 +67,7 @@ def regression_loss_same(q, k):
 
     return -2 * loss.mean()
 
-def flow_loss_dataset(q, k, coord_q, coord_k mask):
+def flow_loss_dataset(q, k, coord_q, coord_k, mask):
     q_valid = F.grid_sample(q, coord_q.permute(0, 2, 3, 1),
                              align_corners=True).permute(0, 2, 3, 1)[mask]
     k_valid = F.grid_sample(k, coord_k.permute(0, 2, 3, 1),
