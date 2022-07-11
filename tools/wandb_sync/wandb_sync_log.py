@@ -18,23 +18,7 @@ def rename_wandb_name_path(path, remove_str):
     wandb_name = wandb_name.replace("__", "_")
     return wandb_name
 
-
-if __name__ == "__main__":
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--root_path",
-                        default="/home/tomo/ssl_pj/pixpro_pj/PixPro/output")
-    parser.add_argument("--project", default="PixPro")
-    parser.add_argument("--target_path", default="")
-    parser.add_argument("--ids", nargs="+", default=None)
-    parser.add_argument("--upload", action="store_true")
-    args = parser.parse_args()
-
-    root_path = os.path.abspath(args.root_path)
-    root = os.path.abspath(args.target_path)
-
-    wandb_name = rename_wandb_name_path(root, root_path)
-
+def get_save_tf_files(root):
     file_or_dirs = sorted(glob.glob(f"{root}/**", recursive=True))
 
     require_files = ["current.pth", ".o", ".txt", "config.json"]
@@ -57,6 +41,28 @@ if __name__ == "__main__":
                 save_files.append(file_or_dir)
 
     tf_logs = sorted(tf_logs)
+    save_files = sorted(save_files)
+    return save_files, tf_logs
+
+
+if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--root_path",
+                        default="/home/tomo/ssl_pj/pixpro_pj/PixPro/output")
+    parser.add_argument("--project", default="PixPro")
+    parser.add_argument("--target_path", default="")
+    parser.add_argument("--ids", nargs="+", default=None)
+    parser.add_argument("--upload", action="store_true")
+    args = parser.parse_args()
+
+    root_path = os.path.abspath(args.root_path)
+    root = os.path.abspath(args.target_path)
+
+    wandb_name = rename_wandb_name_path(root, root_path)
+
+    save_files, tf_logs = get_save_tf_files(root)
+
     num_tf_log = len(tf_logs)
     is_make_local_tf_dir = num_tf_log > 1
     for i, tf_log in enumerate(tf_logs):
