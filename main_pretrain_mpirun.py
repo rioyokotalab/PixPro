@@ -10,6 +10,10 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
+import wandb
+
+from tools.wandb_sync import wandb_sync_log
+
 from contrast import models
 from contrast import resnet
 from contrast.data import get_loader
@@ -142,6 +146,8 @@ def main(args):
         if dist.get_rank() == 0 and (epoch % args.save_freq == 0 or epoch == args.epochs):
             save_checkpoint(args, epoch, model, optimizer, scheduler, sampler=train_loader.sampler)
 
+        # if epoch >= 10:
+        #     break
 
 def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer):
     """
@@ -189,6 +195,12 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar('lr', lr, step)
                 summary_writer.add_scalar('loss', loss_meter.val, step)
 
+        if dist.get_rank() == 0:
+            global_step = (epoch - 1) * train_len + idx
+            wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
+                "epoch": epoch - 1, "global_step": global_step, "time": batch_time.val,
+                "time/avg": batch_time.avg})
+
 def dist_setup():
     master_addr = os.getenv("MASTER_ADDR", default="localhost")
     master_port = os.getenv("MASTER_PORT", default="8888")
@@ -206,6 +218,21 @@ def dist_setup():
     print("Rank: {}, Size: {}, Host: {} Port: {}".format(dist.get_rank(), dist.get_world_size(),
                                                 master_addr, master_port))
     return local_rank
+
+def get_wandb_name(args):
+    wandb_name = "pretrain_"
+    wandb_name += f"crop-{args.crop}_"
+    wandb_name += f"aug-{args.aug}_"
+    wandb_name += f"{args.dataset}_"
+    wandb_name += f"image-size-{args.image_size}_"
+    wandb_name += f"l-bn-{args.batch_size}_"
+    wandb_name += f"epoch-{args.epochs}_"
+    if args.flowe_loss:
+        wandb_name += "flowe-loss_"
+    if args.pixpro_no_headsim:
+        wandb_name += "no-headsim_"
+    wandb_name = wandb_name.rstrip("_")
+    return wandb_name
 
 
 if __name__ == '__main__':
@@ -228,6 +255,13 @@ if __name__ == '__main__':
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
         logger.info("Full config saved to {}".format(path))
+        wandb_name = get_wandb_name(opt)
+        wandb.init(project="PixPro", entity="tomo", name=wandb_name)
+        wandb.config.update(opt)
+        wandb.save(path, base_path=opt.output_dir)
+        git_files = wandb_sync_log.get_git_files(opt.output_dir)
+        for f in git_files:
+            wandb.save(f, base_path=opt.output_dir)
 
     # print args
     logger.info(
@@ -235,3 +269,12 @@ if __name__ == '__main__':
     )
 
     main(opt)
+
+    if dist.get_rank() == 0:
+        require_files = [".o", ".txt", "config.json"]
+        save_files, tf_logs = wandb_sync_log.get_save_tf_files(opt.output_dir, require_files)
+        for f in save_files:
+            wandb.save(f, base_path=opt.output_dir)
+        for f in tf_logs:
+            wandb.save(f, base_path=opt.output_dir)
+

@@ -18,10 +18,21 @@ def rename_wandb_name_path(path, remove_str):
     wandb_name = wandb_name.replace("__", "_")
     return wandb_name
 
-def get_save_tf_files(root):
+def get_git_files(root):
     file_or_dirs = sorted(glob.glob(f"{root}/**", recursive=True))
 
-    require_files = ["current.pth", ".o", ".txt", "config.json"]
+    git_files = []
+
+    for file_or_dir in file_or_dirs:
+        if os.path.isfile(file_or_dir):
+            if "git" in file_or_dir:
+                git_files.append(file_or_dir)
+
+    return git_files
+
+
+def get_save_tf_files(root, require_files):
+    file_or_dirs = sorted(glob.glob(f"{root}/**", recursive=True))
 
     save_files = []
     tf_logs = []
@@ -61,7 +72,9 @@ if __name__ == "__main__":
 
     wandb_name = rename_wandb_name_path(root, root_path)
 
-    save_files, tf_logs = get_save_tf_files(root)
+    require_files = ["current.pth", ".o", ".txt", "config.json"]
+
+    save_files, tf_logs = get_save_tf_files(root, require_files)
 
     num_tf_log = len(tf_logs)
     is_make_local_tf_dir = num_tf_log > 1
