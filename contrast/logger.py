@@ -147,7 +147,7 @@ def init_wandb(args):
     wandb_name = get_wandb_name(args)
     wandb.init(project="PixPro", entity="tomo", name=wandb_name)
     wandb.config.update(args)
-    git_files = get_git_files(opt.output_dir)
+    git_files = get_git_files(args.output_dir)
     for f in git_files:
-        wandb.save(f, base_path=opt.output_dir)
+        wandb.save(f, base_path=args.output_dir)
 
