@@ -13,7 +13,7 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
     image_size = args.image_size
     if image_size == 1024:
         image_size = (512, 1024)
-    transform = get_transform(aug_type, args.crop, image_size)
+    transform = get_transform(aug_type, args.crop, image_size, two_crop)
 
     # dataset
     if args.zip:

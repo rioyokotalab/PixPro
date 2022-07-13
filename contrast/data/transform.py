@@ -16,7 +16,7 @@ class GaussianBlur(object):
         return x
 
 
-def get_transform(aug_type, crop, image_size=224):
+def get_transform(aug_type, crop, image_size=224, two_crop=False):
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     if aug_type == "InstDisc":  # used in InstDisc and MoCo v1
@@ -49,7 +49,7 @@ def get_transform(aug_type, crop, image_size=224):
             normalize,
         ])
     elif aug_type == 'BYOL':
-        transform_1 = transform_coord.Compose([
+        transform_1 = [
             transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
@@ -57,8 +57,8 @@ def get_transform(aug_type, crop, image_size=224):
             transforms.RandomApply([GaussianBlur()], p=1.0),
             transforms.ToTensor(),
             normalize,
-        ])
-        transform_2 = transform_coord.Compose([
+        ]
+        transform_2 = [
             transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
@@ -67,8 +67,9 @@ def get_transform(aug_type, crop, image_size=224):
             transforms.RandomApply([ImageOps.solarize], p=0.2),
             transforms.ToTensor(),
             normalize,
-        ])
-        transform = (transform_1, transform_2)
+        ]
+        transform_tuple = (transform_1, transform_2)
+        transform = transform_coord.Compose(transform_tuple, two_crop=two_crop)
     elif aug_type == 'RandAug':  # used in InfoMin
         rgb_mean = (0.485, 0.456, 0.406)
         ra_params = dict(

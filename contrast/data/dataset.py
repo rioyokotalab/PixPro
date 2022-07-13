@@ -346,38 +346,16 @@ class ImageFolder(DatasetFolder):
             target = target[0]
         coord = None
 
-        if self.transform is not None:
-            if isinstance(self.transform, tuple) and len(self.transform) == 2:
-                img = self.transform[0](images[0], coord=coord)
-            else:
-                img = self.transform(images[0], coord=coord)
-        else:
-            img = images[0]
-
-        if isinstance(img, tuple):
-            tmp_img, coord = img
-            self.same_two = isinstance(coord, list)
-            if self.same_two:
-                img = tmp_img
-
         if self.target_transform is not None:
             target = self.target_transform(target, coord=coord)
 
-        if self.two_crop:
-            if isinstance(self.transform, tuple) and len(self.transform) == 2:
-                img2 = self.transform[1](images[-1], coord=coord)
-            else:
-                img2 = self.transform(images[-1], coord=coord)
+        if self.transform is not None:
+            img = self.transform(images)
+        else:
+            img = images[0]
 
-        if self.same_two:
-            if coord is not None:
-                coord, _ = coord
-            img = (img, coord)
-            if self.two_crop:
-                img2, coord2 = img2
-                if coord2 is not None:
-                    coord2, _ = coord2
-                img2 = (img2, coord2)
+        if self.two_crop and isinstance(img, tuple):
+            img, img2 = img
 
         if self.return_coord:
             assert isinstance(img, tuple)
