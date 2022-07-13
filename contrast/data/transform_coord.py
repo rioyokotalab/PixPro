@@ -57,7 +57,7 @@ class Compose(object):
         is_compose = isinstance(transforms, Compose)
         if (is_tuple or is_compose) and num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
-        if num_transform <= 1 or (not is_tuple or not is_compose):
+        if num_transform <= 1 or (not is_tuple and not is_compose):
             self.transforms = (self.transforms,)
 
     def __call__(self, imgs, coord=None):
