@@ -250,8 +250,28 @@ if __name__ == '__main__':
     main(opt)
 
     if dist.get_rank() == 0:
-        require_files = [".o", ".txt", "config.json"]
-        save_files = get_save_files(opt.output_dir, require_files)
+        out_root = opt.output_dir
+        log_name = opt.log_name
+        if log_name != "" and log_name is not None:
+            if os.path.isfile(log_name):
+                abs_log_path = os.path.abspath(log_name)
+                log_base_name = os.path.basename(abs_log_path)
+                ext_log = os.path.splitext(log_base_name)[1]
+                if ext_log != ".txt":
+                    log_base_name += ".txt"
+                new_logname = os.path.join(out_root, log_base_name)
+                copyfile(abs_log_path, new_logname)
+        require_files = [".o", ".txt", ".sh", "config.json"]
+        save_files = get_save_files(out_root, require_files)
         for f in save_files:
-            wandb.save(f, base_path=opt.output_dir)
+            new_f = f
+            is_tf_log = "events." in f
+            is_log = ".out" in f or ".txt" in f
+            if not is_tf_log and is_log:
+                base_name = os.path.basename(f)
+                ext_log = os.path.splitext(base_name)[1]
+                if ext_log != ".txt":
+                    new_f = f + ".txt"
+                    copyfile(f, new_f)
+            wandb.save(new_f, base_path=out_root)
 

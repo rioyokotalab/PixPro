@@ -10,6 +10,9 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
+import wandb
+from contrast.logger import init_wandb, get_save_files
+
 from contrast import models
 from contrast import resnet
 from contrast.data import get_loader
@@ -142,6 +145,8 @@ def main(args):
         if dist.get_rank() == 0 and (epoch % args.save_freq == 0 or epoch == args.epochs):
             save_checkpoint(args, epoch, model, optimizer, scheduler, sampler=train_loader.sampler)
 
+        if epoch >= args.debug_epochs:
+            break
 
 def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer):
     """
@@ -189,6 +194,11 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar('lr', lr, step)
                 summary_writer.add_scalar('loss', loss_meter.val, step)
 
+        if dist.get_rank() == 0:
+            global_step = (epoch - 1) * train_len + idx
+            wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
+                "epoch": epoch - 1, "global_step": global_step, "time": batch_time.val,
+                "time/avg": batch_time.avg})
 
 if __name__ == '__main__':
     opt = parse_option(stage='pre-train')
@@ -208,6 +218,8 @@ if __name__ == '__main__':
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
         logger.info("Full config saved to {}".format(path))
+        init_wandb(opt)
+        wandb.save(path, base_path=opt.output_dir)
 
     # print args
     logger.info(
@@ -215,3 +227,30 @@ if __name__ == '__main__':
     )
 
     main(opt)
+
+    if dist.get_rank() == 0:
+        out_root = opt.output_dir
+        log_name = opt.log_name
+        if log_name != "" and log_name is not None:
+            if os.path.isfile(log_name):
+                abs_log_path = os.path.abspath(log_name)
+                log_base_name = os.path.basename(abs_log_path)
+                ext_log = os.path.splitext(log_base_name)[1]
+                if ext_log != ".txt":
+                    log_base_name += ".txt"
+                new_logname = os.path.join(out_root, log_base_name)
+                copyfile(abs_log_path, new_logname)
+        require_files = [".o", ".txt", ".sh", "config.json"]
+        save_files = get_save_files(out_root, require_files)
+        for f in save_files:
+            new_f = f
+            is_tf_log = "events." in f
+            is_log = ".out" in f or ".txt" in f
+            if not is_tf_log and is_log:
+                base_name = os.path.basename(f)
+                ext_log = os.path.splitext(base_name)[1]
+                if ext_log != ".txt":
+                    new_f = f + ".txt"
+                    copyfile(f, new_f)
+            wandb.save(new_f, base_path=out_root)
+
