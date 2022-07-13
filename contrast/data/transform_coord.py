@@ -10,6 +10,8 @@ except ImportError:
     accimage = None
 import warnings
 
+from typing import List, Tuple, Union
+
 from torchvision.transforms import functional as F
 
 
@@ -45,18 +47,50 @@ class Compose(object):
         >>> ])
     """
 
-    def __init__(self, transforms, same_two=False):
+    def __init__(self, transforms: Union[Tuple[List], List, Tuple],
+                 same_two=False, two_crop=False):
         self.transforms = transforms
         self.same_two = same_two
+        self.two_crop = two_crop
+        num_transform = len(transforms)
+        is_tuple = isinstance(transforms, tuple)
+        is_compose = isinstance(transforms, Compose)
+        if (is_tuple or is_compose) and num_transform > 2:
+            raise Exception(f"Unsupport for # of transforms is {num_transform}")
+        if num_transform <= 1 or (not is_tuple or not is_compose):
+            self.transforms = (self.transforms,)
 
-    def __call__(self, img, coord=None):
+    def __call__(self, imgs, coord=None):
+        is_list = isinstance(imgs, list) or isinstance(imgs, tuple)
+        if is_list:
+            image1, image2 = imgs[0], imgs[-1]
+        else:
+            image1, image2 = imgs, imgs
+
+        img, coord = self.main_call(image1, coord, self.transforms[0])
+        if self.two_crop:
+            img2, coord2 = self.main_call(image2, coord, self.transforms[-1])
+        if self.same_two:
+            coord, _  = coord
+            if self.two_crop:
+                coord2, _ = coord2
+
+        if self.two_crop:
+            return (img, coord), (img2, coord2)
+        return img, coord
+
+    def main_call(self, img, coord=None, transforms=None):
+
+        if transforms is None:
+            transforms = self.transforms[0]
+
         params, in_params = None, None
         tmp_len_key = {}
         is_same_two_coord = isinstance(coord, list)
         if is_same_two_coord:
             coord, params = coord
 
-        for t in self.transforms:
+        for t in transforms:
             if t.__class__.__name__ in tmp_len_key.keys():
                 tmp_len_key[t.__class__.__name__] += 1
             else:
