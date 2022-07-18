@@ -188,6 +188,7 @@ class Compose(object):
             # coord2 = mycoord2.clone()
 
         if torch.distributed.get_rank() == 0:
+            print(calc_coord.shape, mycoord.shape)
             print(calc_coord, mycoord, calc_coord == mycoord)
             print(calc_coord2, mycoord2, calc_coord2 == mycoord2)
             print(mycoord[0][mask], mycoord[1][mask])
@@ -196,13 +197,12 @@ class Compose(object):
         img_tmp = img.unsqueeze(0)
         grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
         img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=True)
-        # img = img_tmp[0].clone()
+        img = img_tmp[0].clone()
         if self.two_crop:
             img2_tmp = img2.unsqueeze(0)
             grid2_tmp = grid2.unsqueeze(0).permute(0, 2, 3, 1)
             img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=True)
-            # img2 = img2_tmp[0].clone()
-
+            img2 = img2_tmp[0].clone()
 
         if self.two_crop:
             return (img, coord), (img2, coord2)
@@ -389,8 +389,8 @@ class RandomHorizontalFlipCoord(object):
                 mycoord = F.hflip(mycoord)
                 coord_new = [(grid, mycoord), coord_new]
 
-            return F.hflip(img), coord_new
-            # return img, coord_new
+            # return F.hflip(img), coord_new
+            return img, coord_new
         return img, coord
 
     def __repr__(self):
@@ -562,8 +562,8 @@ class RandomResizedCropCoord(object):
         if same_two:
             params = {self.__class__.__name__: params}
             coord = [coord, params]
-        return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), coord
-        # return img, coord
+        # return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), coord
+        return img, coord
 
     def __repr__(self):
         interpolate_str = _pil_interpolation_to_str[self.interpolation]
