@@ -3,3 +3,5 @@ opencv-python
 pillow
 tensorboard
 termcolor
+mypy
+wandb

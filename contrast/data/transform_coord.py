@@ -47,18 +47,17 @@ class Compose(object):
         >>> ])
     """
 
-    def __init__(self, transforms: Union[Tuple[List], List, Tuple],
+    def __init__(self, transforms: Union[Tuple[List], List],
                  same_two=False, two_crop=False):
-        self.transforms = transforms
+        if isinstance(transforms, tuple):
+            self.transforms: Tuple[List] = transforms
+        else:
+            self.transforms = (transforms,)
         self.same_two = same_two
         self.two_crop = two_crop
-        num_transform = len(transforms)
-        is_tuple = isinstance(transforms, tuple)
-        is_compose = isinstance(transforms, Compose)
-        if (is_tuple or is_compose) and num_transform > 2:
+        num_transform = len(self.transforms)
+        if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
-        if num_transform <= 1 or (not is_tuple and not is_compose):
-            self.transforms = (self.transforms,)
 
     def __call__(self, imgs, coord=None):
         is_list = isinstance(imgs, list) or isinstance(imgs, tuple)
@@ -181,8 +180,10 @@ class RandomRescaleCoord(object):
 
     def __call__(self, img, same_two=False):
         """call method"""
-        if same_two:
+        is_coord = isinstance(img, list)
+        if is_coord:
             img, coord = img
+        if same_two:
             coord, params = coord
         width, height = img.size
 
@@ -195,9 +196,15 @@ class RandomRescaleCoord(object):
                 scale_now = random.uniform(self.min_scale, self.max_scale)
         else:
             scale_now = params
-        new_width, new_height = int(scale_now * width), int(scale_now * height)
         # resize
-        img = img.resize((new_width, new_height), Image.BICUBIC)
+        new_width, new_height = int(scale_now * width), int(scale_now * height)
+        i, j = (new_width - width) / 2, (new_height - height) / 2
+        coord = torch.Tensor([j / (width - 1), i / (height - 1),
+                              (j + width - 1) / (width - 1), (i + height - 1) / (height - 1)])
+
+        # img = img.resize((new_width, new_height), Image.BICUBIC)
+        fill = [0.0] * F._get_image_num_channels(img)
+        img = F.affine(img, 0.0, (0, 0), scale_now, (0.0, 0.0), fill=fill)
         if same_two:
             params = {self.__class__.__name__: scale_now}
             coord = [coord, params]
@@ -343,8 +350,10 @@ class RandomResizedCropCoord(object):
             PIL Image: Randomly cropped and resized image.
         """
         # rank = torch.distributed.get_rank()
-        if same_two:
+        is_coord = isinstance(img, list)
+        if is_coord:
             img, coord = img
+        if same_two and is_coord:
             coord, params = coord
             # if rank == 0:
             #     print(self.__class__.__name__, "params:", params)
