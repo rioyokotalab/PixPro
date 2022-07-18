@@ -12,7 +12,9 @@ import warnings
 
 from typing import List, Tuple, Union
 
+import torch
 from torchvision.transforms import functional as F
+import torch.nn.functional as nnF
 
 
 _pil_interpolation_to_str = {
@@ -32,6 +34,64 @@ def _get_image_size(img):
         return img.shape[-2:][::-1]
     else:
         raise TypeError("Unexpected type {}".format(type(img)))
+
+
+def get_init_grid(grid_size, device, normalize_type=None):
+    height, width = grid_size
+    grid = torch.meshgrid(torch.arange(height), torch.arange(width))
+    grid = torch.stack(grid[::-1], dim=0).float().to(device)
+    if normalize_type is not None:
+        if normalize_type == "norm":
+            grid = normalize_grid(grid)
+        elif normalize_type == "center":
+            grid = centerize_grid(grid)
+    return grid
+
+
+def get_device(is_set=False):
+    device_name = "cuda" if torch.cuda.is_available() else "cpu"
+    rank = 0
+    if torch.distributed.is_initialized():
+        rank = torch.distributed.get_rank()
+    if device_name == "cuda":
+        ngpus = torch.cuda.device_count()
+        local_rank = rank % ngpus
+        if is_set:
+            torch.cuda.set_device(local_rank)
+        device = torch.device(device_name, local_rank)
+    else:
+        device = torch.device(device_name)
+
+
+def get_crop_size(transforms: List):
+    crop_size = None
+    for t in transforms:
+        if 'RandomResizedCrop' in t.__class__.__name__:
+            crop_size = t.size
+    return crop_size
+
+
+def get_coord(size, coord):
+    H, W = size
+    # C, H, W = coord.shape
+    array = torch.meshgrid(torch.arange(H), torch.arange(W))
+    array = torch.stack(array[::-1], dim=0).float()
+    # x_array = torch.arange(0., float(W), dtype=coord.dtype, device=coord.device).view(1, 1, -1).repeat(1, H, 1)
+    # y_array = torch.arange(0., float(H), dtype=coord.dtype, device=coord.device).view(1, -1, 1).repeat(1, 1, W)
+    # [bs, 1, 1]
+    bin_width = ((coord[2] - coord[0]) / W).view(1, 1)
+    bin_height = ((coord[3] - coord[1]) / H).view(1, 1)
+    # [bs, 1, 1]
+    start_x = coord[0].view(1, 1)
+    start_y = coord[1].view(1, 1)
+
+    # [bs, 7, 7]
+    # center_q_x = (x_array + 0.5) * bin_width + start_x
+    # center_q_y = (y_array + 0.5) * bin_height + start_y
+    array[0] = array[0] * bin_width + start_x
+    array[1] = array[1] * bin_height + start_y
+    array = 2 * array - 1
+    return array
 
 
 class Compose(object):
@@ -58,6 +118,17 @@ class Compose(object):
         num_transform = len(self.transforms)
         if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
+        self.device = get_device()
+        crop_size_list = []
+        for transforms in self.transforms:
+            tmp_crop_size = get_crop_size(transforms)
+            crop_size_list.append(tmp_crop_size)
+
+        tmp_crop_size = crop_size_list[0]
+        for crop_size in crop_size_list[1:]:
+            if tmp_crop_size is not None:
+                assert tmp_crop_size == crop_size
+        self.crop_size = tmp_crop_size
 
     def __call__(self, imgs, coord=None):
         is_list = isinstance(imgs, list) or isinstance(imgs, tuple)
@@ -66,13 +137,72 @@ class Compose(object):
         else:
             image1, image2 = imgs, imgs
 
+        grid_size = self.crop_size
+        if grid_size is None:
+            w, h = _get_image_size(image1)
+            grid_size = (h, w)
+        coord_size = (grid_size[0] // 8, grid_size[1] // 8)
+
+        # normalize_type = None
+        # normalize_type = "norm"
+        normalize_type = "center"
+        init_grid = get_init_grid(grid_size, self.device, normalize_type)
+        init_coord = get_init_grid(coord_size, self.device, normalize_type)
+        # init_mask = torch.ones(coord_size, dtype=bool).to(self.device)
+        if isinstance(coord, list):
+            coord, params = coord
+            coord = [(init_grid, init_coord), coord]
+            coord = [coord, params]
+        else:
+            coord = [(init_grid, init_coord), coord]
+            coord = [coord, None]
+
         img, coord = self.main_call(image1, coord, self.transforms[0])
         if self.two_crop:
-            img2, coord2 = self.main_call(image2, coord, self.transforms[-1])
+            in_coord = coord if self.same_two else [coord, None]
+            img2, coord2 = self.main_call(image2, in_coord, self.transforms[-1])
         if self.same_two:
             coord, _  = coord
             if self.two_crop:
                 coord2, _ = coord2
+
+        # official coord
+        grids, coord = coord
+        calc_coord = get_coord(coord_size, coord)
+        if self.two_crop:
+            grids2, coord2 = coord2
+            calc_coord2 = get_coord(coord_size, coord2)
+
+        # my coord
+        grid, mycoord = grids
+        mycoord = normalize_grid_ceterized(mycoord)
+        grid = normalize_grid_ceterized(grid)
+        mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
+        # coord = mycoord.clone()
+        if self.two_crop:
+            grid2, mycoord2 = grids2
+            mycoord2 = normalize_grid_ceterized(mycoord2)
+            grid2 = normalize_grid_ceterized(grid2)
+            mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
+            mask = mask & mask2
+            # coord2 = mycoord2.clone()
+
+        if torch.distributed.get_rank() == 0:
+            print(calc_coord, mycoord, calc_coord == mycoord)
+            print(calc_coord2, mycoord2, calc_coord2 == mycoord2)
+            print(mycoord[0][mask], mycoord[1][mask])
+            print(mycoord2[0][mask], mycoord2[1][mask])
+
+        img_tmp = img.unsqueeze(0)
+        grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
+        img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=True)
+        # img = img_tmp[0].clone()
+        if self.two_crop:
+            img2_tmp = img2.unsqueeze(0)
+            grid2_tmp = grid2.unsqueeze(0).permute(0, 2, 3, 1)
+            img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=True)
+            # img2 = img2_tmp[0].clone()
+
 
         if self.two_crop:
             return (img, coord), (img2, coord2)
@@ -111,12 +241,14 @@ class Compose(object):
             elif 'RandomResizedCropCoord' in t.__class__.__name__:
                 if self.same_two:
                     coord = [coord, in_params]
-                in_img = [img, coord] if self.same_two else img
+                # in_img = [img, coord] if self.same_two else img
+                in_img = [img, coord]
                 img, coord = t(in_img, same_two=self.same_two)
             elif 'RandomRescaleCoord' in t.__class__.__name__:
                 if self.same_two:
                     coord = [coord, in_params]
-                in_img = [img, coord] if self.same_two else img
+                # in_img = [img, coord] if self.same_two else img
+                in_img = [img, coord]
                 img, coord = t(in_img, same_two=self.same_two)
             elif 'FlipCoord' in t.__class__.__name__:
                 img, coord = t(img, coord)
@@ -185,6 +317,14 @@ class RandomRescaleCoord(object):
             img, coord = img
         if same_two:
             coord, params = coord
+
+        is_calc_coord = False
+        if is_coord:
+            is_calc_coord = isinstance(coord, list)
+
+        if is_calc_coord:
+            grids, coord = coord
+            grid, mycoord = grids
         width, height = img.size
 
         if not same_two or params is None:
@@ -202,6 +342,10 @@ class RandomRescaleCoord(object):
         coord = torch.Tensor([j / (width - 1), i / (height - 1),
                               (j + width - 1) / (width - 1), (i + height - 1) / (height - 1)])
 
+        if is_calc_coord:
+            grid = grid / scale_now
+            mycoord = mycoord * scale_now
+            coord = [(grid, mycoord), coord]
         # img = img.resize((new_width, new_height), Image.BICUBIC)
         fill = [0.0] * F._get_image_num_channels(img)
         img = F.affine(img, 0.0, (0, 0), scale_now, (0.0, 0.0), fill=fill)
@@ -231,10 +375,22 @@ class RandomHorizontalFlipCoord(object):
             PIL Image: Randomly flipped image.
         """
         if random.random() < self.p:
+            is_calc_coord = isinstance(coord, list)
+            if is_calc_coord:
+                grids, coord = coord
+                grid, mycoord = grids
+
             coord_new = coord.clone()
             coord_new[0] = coord[2]
             coord_new[2] = coord[0]
+
+            if is_calc_coord:
+                grid = F.hflip(grid)
+                mycoord = F.hflip(mycoord)
+                coord_new = [(grid, mycoord), coord_new]
+
             return F.hflip(img), coord_new
+            # return img, coord_new
         return img, coord
 
     def __repr__(self):
@@ -260,10 +416,22 @@ class RandomVerticalFlipCoord(object):
             PIL Image: Randomly flipped image.
         """
         if random.random() < self.p:
+            is_calc_coord = isinstance(coord, list)
+            if is_calc_coord:
+                grids, coord = coord
+                grid, mycoord = grids
+
             coord_new = coord.clone()
             coord_new[1] = coord[3]
             coord_new[3] = coord[1]
+
+            if is_calc_coord:
+                grid = F.vflip(grid)
+                mycoord = F.vflip(mycoord)
+                coord_new = [(grid, mycoord), coord_new]
+
             return F.vflip(img), coord_new
+            # return img, coord_new
         return img, coord
 
     def __repr__(self):
@@ -357,6 +525,15 @@ class RandomResizedCropCoord(object):
             coord, params = coord
             # if rank == 0:
             #     print(self.__class__.__name__, "params:", params)
+        is_calc_coord = False
+        if is_coord:
+            is_calc_coord = isinstance(coord, list)
+        if is_calc_coord:
+            grids, coord = coord
+            grid, mycoord = grids
+            grid_h, grid_w = grid.shape[-2:]
+            coord_h, coord_w = mycoord.shape[-2:]
+
         if not same_two or params is None:
             i, j, h, w, height, width = self.get_params(img, self.scale, self.ratio)
         else:
@@ -367,10 +544,26 @@ class RandomResizedCropCoord(object):
         params = [i, j, h, w, height, width]
         coord = torch.Tensor([float(j) / (width - 1), float(i) / (height - 1),
                               float(j + w - 1) / (width - 1), float(i + h - 1) / (height - 1)])
+        if is_calc_coord:
+            scale_now_h = height / h
+            scale_now_w = width / w
+            diff_x1 = 2 * j / (grid_w - 1)
+            diff_y1 = 2 * i / (grid_h - 1)
+            grid[0] = grid[0] / scale_now_w
+            grid[1] = grid[1] / scale_now_h
+            grid[0] = grid[0] + (diff_x1 * grid_w)
+            grid[1] = grid[1] + (diff_y1 * grid_h)
+            mycoord[0] = mycoord[0] * scale_now_w
+            mycoord[1] = mycoord[1] * scale_now_h
+            mycoord[0] = mycoord[0] - (diff_x1 * coord_w)
+            mycoord[1] = mycoord[1] - (diff_x1 * coord_h)
+            coord = [(grid, mycoord), coord]
+
         if same_two:
             params = {self.__class__.__name__: params}
             coord = [coord, params]
         return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), coord
+        # return img, coord
 
     def __repr__(self):
         interpolate_str = _pil_interpolation_to_str[self.interpolation]
@@ -379,3 +572,39 @@ class RandomResizedCropCoord(object):
         format_string += ', ratio={0}'.format(tuple(round(r, 4) for r in self.ratio))
         format_string += ', interpolation={0})'.format(interpolate_str)
         return format_string
+
+
+@torch.no_grad()
+def normalize_grid(grid):
+    _, ht, wd = grid.shape
+    grid_norm = grid.clone()
+    grid_norm[0] = 2 * grid_norm[0] / (wd - 1) - 1
+    grid_norm[1] = 2 * grid_norm[1] / (ht - 1) - 1
+    return grid_norm
+
+
+@torch.no_grad()
+def normalize_grid_ceterized(grid_cent):
+    _, ht, wd = grid_cent.shape
+    grid_norm = grid_cent.clone()
+    grid_norm[0] = grid_norm[0] / (wd - 1)
+    grid_norm[1] = grid_norm[1] / (ht - 1)
+    return grid_norm
+
+
+@torch.no_grad()
+def centerize_grid(grid):
+    _, ht, wd = grid.shape
+    grid_cent = grid.clone()
+    grid_cent[0] = 2 * grid_cent[0] - (wd - 1)
+    grid_cent[1] = 2 * grid_cent[1] - (ht - 1)
+    return grid_cent
+
+
+@torch.no_grad()
+def denormalize_cenetrize_grid(grid_norm):
+    _, ht, wd = grid_norm.shape
+    grid_cent = grid_norm.clone()
+    grid_cent[0] = grid_cent[0] * (wd - 1)
+    grid_cent[1] = grid_cent[1] * (ht - 1)
+    return grid_cent
