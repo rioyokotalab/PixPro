@@ -13,6 +13,7 @@ ckpts/
 tmp*.py
 *.pdf
 !contrast/data
+wandb/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
