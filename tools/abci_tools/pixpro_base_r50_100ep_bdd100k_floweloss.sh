@@ -9,13 +9,9 @@ bs=128
 dataset_name="bdd100k/images"
 # dataset_name="imagenet"
 data_dir="./data/$dataset_name"
-# aug="BYOL"
-aug="myBYOL"
-# aug="SimCLR"
-# aug="mySimCLR"
-# output_dir="./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/$date_str"
-output_dir=${1:-"./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/$date_str"}
 # output_dir="./output/pixpro_base_r50_100ep/20220517_224459"
+# output_dir="./output/pixpro_base_r50_100ep/$dataset_name/$bs/no_headsim/$date_str"
+output_dir=${1:-"./output/pixpro_base_r50_100ep/$dataset_name/$bs/floweloss/$date_str"}
 dataset_type="bdd100k"
 # dataset_type="ImageNet"
 
@@ -29,8 +25,8 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     --output-dir ${output_dir} \
     \
     --cache-mode no \
-    --crop 1.0 \
-    --aug "$aug" \
+    --crop 0.08 \
+    --aug BYOL \
     --dataset "$dataset_type" \
     --batch-size $bs \
     \
@@ -51,8 +47,9 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     \
     --pixpro-p 2 \
     --pixpro-momentum 0.99 \
-    --pixpro-pos-ratio 0.7 \
+    --pixpro-pos-ratio 0.1 \
     --pixpro-transform-layer 1 \
     --pixpro-ins-loss-weight 0. \
+    # --pixpro-no-headsim
     # --zip \
 

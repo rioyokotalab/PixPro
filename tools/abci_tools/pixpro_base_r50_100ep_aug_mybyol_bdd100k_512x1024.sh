@@ -13,7 +13,8 @@ data_dir="./data/$dataset_name"
 aug="myBYOL"
 # aug="SimCLR"
 # aug="mySimCLR"
-output_dir="./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/512x1024/$date_str"
+# output_dir="./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/512x1024/$date_str"
+output_dir=${1:-"./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/512x1024/$date_str"}
 # output_dir="./output/pixpro_base_r50_100ep/20220517_224459"
 dataset_type="bdd100k"
 # dataset_type="ImageNet"
@@ -28,7 +29,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     --output-dir ${output_dir} \
     \
     --cache-mode no \
-    --crop 0.08 \
+    --crop 1.0 \
     --aug "$aug" \
     --dataset "$dataset_type" \
     --batch-size $bs \

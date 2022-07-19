@@ -6,18 +6,14 @@ set -x
 date_str=$(date '+%Y%m%d_%H%M%S')
 bs=128
 # bs=16
-dataset_name="bdd100k/images"
-# dataset_name="imagenet"
-data_dir="./data/$dataset_name"
 # aug="BYOL"
 aug="myBYOL"
 # aug="SimCLR"
 # aug="mySimCLR"
-# output_dir="./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/$date_str"
-output_dir=${1:-"./output/pixpro_base_r50_100ep/$dataset_name/$bs/$aug/$date_str"}
+data_dir="./data/imagenet/"
+# output_dir="./output/pixpro_base_r50_100ep/imagenet/$bs/$aug/$date_str"
+output_dir=${1:-"./output/pixpro_base_r50_100ep/imagenet/$bs/$aug/$date_str"}
 # output_dir="./output/pixpro_base_r50_100ep/20220517_224459"
-dataset_type="bdd100k"
-# dataset_type="ImageNet"
 
 job_id_base=$JOB_ID
 MASTER_ADDR=$(/usr/sbin/ip a show dev bond0 | grep 'inet ' | cut -d " " -f 6 | cut -d "/" -f 1)
@@ -31,7 +27,7 @@ CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --master
     --cache-mode no \
     --crop 1.0 \
     --aug "$aug" \
-    --dataset "$dataset_type" \
+    --dataset ImageNet \
     --batch-size $bs \
     \
     --model PixPro \
