@@ -128,7 +128,8 @@ class Compose(object):
         for crop_size in crop_size_list[1:]:
             if tmp_crop_size is not None:
                 assert tmp_crop_size == crop_size
-        self.crop_size = tmp_crop_size
+        # self.crop_size = tmp_crop_size
+        self.crop_size = None
 
     def __call__(self, imgs, coord=None):
         is_list = isinstance(imgs, list) or isinstance(imgs, tuple)
@@ -151,15 +152,18 @@ class Compose(object):
         # init_mask = torch.ones(coord_size, dtype=bool).to(self.device)
         if isinstance(coord, list):
             coord, params = coord
-            coord = [(init_grid, init_coord), coord]
+            coord = [(init_grid.clone(), init_coord.clone()), coord]
             coord = [coord, params]
         else:
-            coord = [(init_grid, init_coord), coord]
+            coord = [(init_grid.clone(), init_coord.clone()), coord]
             coord = [coord, None]
 
         img, coord = self.main_call(image1, coord, self.transforms[0])
         if self.two_crop:
             in_coord = coord if self.same_two else [coord, None]
+            in_coord, params = in_coord
+            in_coord = [(init_grid.clone(), init_coord.clone()), in_coord]
+            in_coord = [in_coord, params]
             img2, coord2 = self.main_call(image2, in_coord, self.transforms[-1])
         if self.same_two:
             coord, _  = coord
@@ -347,8 +351,8 @@ class RandomRescaleCoord(object):
             mycoord = mycoord * scale_now
             coord = [(grid, mycoord), coord]
         # img = img.resize((new_width, new_height), Image.BICUBIC)
-        fill = [0.0] * F._get_image_num_channels(img)
-        img = F.affine(img, 0.0, (0, 0), scale_now, (0.0, 0.0), fill=fill)
+        # fill = [0.0] * F._get_image_num_channels(img)
+        # img = F.affine(img, 0.0, (0, 0), scale_now, (0.0, 0.0), fill=fill)
         if same_two:
             params = {self.__class__.__name__: scale_now}
             coord = [coord, params]
@@ -430,8 +434,8 @@ class RandomVerticalFlipCoord(object):
                 mycoord = F.vflip(mycoord)
                 coord_new = [(grid, mycoord), coord_new]
 
-            return F.vflip(img), coord_new
-            # return img, coord_new
+            # return F.vflip(img), coord_new
+            return img, coord_new
         return img, coord
 
     def __repr__(self):
@@ -547,8 +551,10 @@ class RandomResizedCropCoord(object):
         if is_calc_coord:
             scale_now_h = height / h
             scale_now_w = width / w
-            diff_x1 = 2 * j / (grid_w - 1)
-            diff_y1 = 2 * i / (grid_h - 1)
+            # diff_x1 = 2 * j / (grid_w - 1)
+            # diff_y1 = 2 * i / (grid_h - 1)
+            diff_x1 = (2 * j + w - width + 1) / (width - 1)
+            diff_y1 = (2 * i + h - height + 1) / (height - 1)
             grid[0] = grid[0] / scale_now_w
             grid[1] = grid[1] / scale_now_h
             grid[0] = grid[0] + (diff_x1 * grid_w)
