@@ -144,9 +144,9 @@ def get_wandb_name(args):
     return wandb_name
 
 
-def init_wandb(args):
+def init_wandb(args, project="PixPro"):
     wandb_name = get_wandb_name(args)
-    wandb.init(project="PixPro", entity="tomo", name=wandb_name)
+    wandb.init(project=project, entity="tomo", name=wandb_name)
     wandb.config.update(args)
     git_files = get_git_files(args.output_dir)
     for f in git_files:
