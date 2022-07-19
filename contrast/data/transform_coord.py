@@ -128,8 +128,8 @@ class Compose(object):
         for crop_size in crop_size_list[1:]:
             if tmp_crop_size is not None:
                 assert tmp_crop_size == crop_size
-        # self.crop_size = tmp_crop_size
-        self.crop_size = None
+        self.crop_size = tmp_crop_size
+        # self.crop_size = None
 
     def __call__(self, imgs, coord=None):
         is_list = isinstance(imgs, list) or isinstance(imgs, tuple)
@@ -142,6 +142,8 @@ class Compose(object):
         if grid_size is None:
             w, h = _get_image_size(image1)
             grid_size = (h, w)
+        # w, h = _get_image_size(image1)
+        # grid_size = (h, w)
         coord_size = (grid_size[0] // 8, grid_size[1] // 8)
 
         # normalize_type = None
@@ -191,21 +193,23 @@ class Compose(object):
             mask = mask & mask2
             # coord2 = mycoord2.clone()
 
-        if torch.distributed.get_rank() == 0:
-            print(calc_coord.shape, mycoord.shape)
-            print(calc_coord, mycoord, calc_coord == mycoord)
-            print(calc_coord2, mycoord2, calc_coord2 == mycoord2)
-            print(mycoord[0][mask], mycoord[1][mask])
-            print(mycoord2[0][mask], mycoord2[1][mask])
+        # if torch.distributed.get_rank() == 0:
+        #     print(calc_coord.shape, mycoord.shape)
+        #     print(calc_coord, mycoord, calc_coord == mycoord)
+        #     print(calc_coord2, mycoord2, calc_coord2 == mycoord2)
+        #     print(mycoord[0][mask], mycoord[1][mask])
+        #     print(mycoord2[0][mask], mycoord2[1][mask])
 
         img_tmp = img.unsqueeze(0)
         grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
         img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=True)
+        # img_tmp = F.resize(img_tmp[0], list(self.crop_size))
         img = img_tmp[0].clone()
         if self.two_crop:
             img2_tmp = img2.unsqueeze(0)
             grid2_tmp = grid2.unsqueeze(0).permute(0, 2, 3, 1)
             img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=True)
+            # img2_tmp = F.resize(img2_tmp[0], list(self.crop_size))
             img2 = img2_tmp[0].clone()
 
         if self.two_crop:
