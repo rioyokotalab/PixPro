@@ -14,6 +14,7 @@ tmp*.py
 *.pdf
 !contrast/data
 wandb/
+jobs/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
