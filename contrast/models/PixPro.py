@@ -206,7 +206,10 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
     if isinstance(coord_q, list):
-        return flow_loss_dataset(q, k, coord_q, coord_k)
+        coord_q, mask = coord_q
+        coord_k, mask = coord_k
+        mask = mask & mask
+        return flow_loss_dataset(q, k, coord_q, coord_k, mask)
     if same_loss:
         return regression_loss_same(q, k)
 
@@ -215,11 +218,6 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
         # max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         # pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
         return flowe_loss(q, k, coord_q, coord_k)
-
-    if isinstance(coord_q, list):
-        coord_q, mask = coord_q
-        coord_k, mask = coord_k
-        mask = mask & mask
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)

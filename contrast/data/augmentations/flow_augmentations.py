@@ -8,8 +8,6 @@ import torch.nn.functional as F
 from torchvision import transforms
 from torchvision.transforms import functional as trF
 
-from contrast.data import transform
-
 
 class Compose(object):
     """Composes several transforms together.
@@ -149,7 +147,7 @@ class Compose(object):
         mask = mask.detach()
         mask = mask & (torch.abs(coords1[0]) < 1) & (torch.abs(coords1[1]) < 1)
         mask = mask & (torch.abs(coords2[0]) < 1) & (torch.abs(coords2[1]) < 1)
-        return [img1[0], img2[0]], [[coords1, coords2], mask]
+        return (img1[0], [coords1, mask]), (img2[0], [coords2, mask])
 
     def __call__(self, img, coord=None, device=None):
         """
