@@ -167,7 +167,7 @@ class Compose(object):
         mycoord = normalize_grid_ceterized(mycoord)
         grid = normalize_grid_ceterized(grid)
         mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
-        # coord = [coord, grid.clone()]
+        coord = [coord, grid.clone()]
         # coord = mycoord.clone()
         if self.two_crop:
             grid2, mycoord2 = grids2
@@ -175,7 +175,7 @@ class Compose(object):
             grid2 = normalize_grid_ceterized(grid2)
             mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
             mask = mask & mask2
-            # coord2 = [coord2, grid2.clone()]
+            coord2 = [coord2, grid2.clone()]
             # coord2 = mycoord2.clone()
 
         # if torch.distributed.get_rank() == 0:
