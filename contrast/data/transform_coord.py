@@ -12,7 +12,6 @@ import warnings
 
 from typing import List, Tuple, Union
 
-import torch
 from torchvision.transforms import functional as F
 import torch.nn.functional as nnF
 
@@ -36,31 +35,16 @@ def _get_image_size(img):
         raise TypeError("Unexpected type {}".format(type(img)))
 
 
-def get_init_grid(grid_size, device, normalize_type=None):
+def get_init_grid(grid_size, normalize_type=None):
     height, width = grid_size
     grid = torch.meshgrid(torch.arange(height), torch.arange(width))
-    grid = torch.stack(grid[::-1], dim=0).float().to(device)
+    grid = torch.stack(grid[::-1], dim=0).float()
     if normalize_type is not None:
         if normalize_type == "norm":
             grid = normalize_grid(grid)
         elif normalize_type == "center":
             grid = centerize_grid(grid)
     return grid
-
-
-def get_device(is_set=False):
-    device_name = "cuda" if torch.cuda.is_available() else "cpu"
-    rank = 0
-    if torch.distributed.is_initialized():
-        rank = torch.distributed.get_rank()
-    if device_name == "cuda":
-        ngpus = torch.cuda.device_count()
-        local_rank = rank % ngpus
-        if is_set:
-            torch.cuda.set_device(local_rank)
-        device = torch.device(device_name, local_rank)
-    else:
-        device = torch.device(device_name)
 
 
 def get_crop_size(transforms: List):
@@ -118,7 +102,6 @@ class Compose(object):
         num_transform = len(self.transforms)
         if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
-        self.device = get_device()
         crop_size_list = []
         for transforms in self.transforms:
             tmp_crop_size = get_crop_size(transforms)
@@ -149,9 +132,9 @@ class Compose(object):
         # normalize_type = None
         # normalize_type = "norm"
         normalize_type = "center"
-        init_grid = get_init_grid(grid_size, self.device, normalize_type)
-        init_coord = get_init_grid(coord_size, self.device, normalize_type)
-        # init_mask = torch.ones(coord_size, dtype=bool).to(self.device)
+        init_grid = get_init_grid(grid_size, normalize_type)
+        init_coord = get_init_grid(coord_size, normalize_type)
+        # init_mask = torch.ones(coord_size, dtype=bool)
         if isinstance(coord, list):
             coord, params = coord
             coord = [(init_grid.clone(), init_coord.clone()), coord]
@@ -168,22 +151,23 @@ class Compose(object):
             in_coord = [in_coord, params]
             img2, coord2 = self.main_call(image2, in_coord, self.transforms[-1])
         if self.same_two:
-            coord, _  = coord
+            coord, _ = coord
             if self.two_crop:
                 coord2, _ = coord2
 
         # official coord
         grids, coord = coord
-        calc_coord = get_coord(coord_size, coord)
+        # calc_coord = get_coord(coord_size, coord)
         if self.two_crop:
             grids2, coord2 = coord2
-            calc_coord2 = get_coord(coord_size, coord2)
+            # calc_coord2 = get_coord(coord_size, coord2)
 
         # my coord
         grid, mycoord = grids
         mycoord = normalize_grid_ceterized(mycoord)
         grid = normalize_grid_ceterized(grid)
         mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
+        # coord = [coord, grid.clone()]
         # coord = mycoord.clone()
         if self.two_crop:
             grid2, mycoord2 = grids2
@@ -191,6 +175,7 @@ class Compose(object):
             grid2 = normalize_grid_ceterized(grid2)
             mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
             mask = mask & mask2
+            # coord2 = [coord2, grid2.clone()]
             # coord2 = mycoord2.clone()
 
         # if torch.distributed.get_rank() == 0:

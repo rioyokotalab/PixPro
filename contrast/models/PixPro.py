@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributed import get_world_size
+from torchvision.transforms import functional as trF
 
 from .base import BaseModel
 
@@ -70,10 +71,10 @@ def regression_loss_same(q, k):
 
 def flow_loss_dataset(q, k, coord_q, coord_k, mask):
     q_valid = F.grid_sample(q, coord_q.permute(0, 2, 3, 1),
-                             align_corners=True).permute(0, 2, 3, 1)[mask]
+                            align_corners=True).permute(0, 2, 3, 1)[mask]
     k_valid = F.grid_sample(k, coord_k.permute(0, 2, 3, 1),
-                             align_corners=True).permute(0, 2, 3, 1)[mask]
-    loss = F.cosine_similarity(q_valid, k_valid, -1, eps=1e-6) 
+                            align_corners=True).permute(0, 2, 3, 1)[mask]
+    loss = F.cosine_similarity(q_valid, k_valid, -1, eps=1e-6)
     return loss.mean()
 
 
@@ -84,8 +85,10 @@ def flowe_loss(q, k, coord_q, coord_k):
     N, C, H, W = q.shape
 
     if isinstance(coord_q, list):
-        coord_q, _ = coord_q
-        coord_k, _ = coord_k
+        coord_q, mask_q = coord_q
+        coord_k, mask_k = coord_k
+        mask = mask_q & mask_k
+        return flow_loss_dataset(q, k, coord_q, coord_k, mask)
 
     # generate center_coord, width, height
     # [1, 7, 7]
@@ -144,7 +147,7 @@ def flowe_loss(q, k, coord_q, coord_k):
 
 def regression_loss_no_calc_grid(q, k, coord_q, coord_k, pos_ratio=0.5):
     """ q, k: N * C * H * W
-        coord_q, coord_k: N * 2 * H * W
+        coord_q, coord_k: N * 2 * H_in * W_in
     """
     N, C, H, W = q.shape
 
@@ -152,6 +155,11 @@ def regression_loss_no_calc_grid(q, k, coord_q, coord_k, pos_ratio=0.5):
     if is_calc_diag:
         square_coord_q, coord_q = coord_q
         square_coord_k, coord_k = coord_k
+
+    H_in, W_in = coord_q.shape[-2:]
+    if H_in != H or W_in != W:
+        coord_q = trF.resize(coord_q, (H, W))
+        coord_k = trF.resize(coord_k, (H, W))
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
@@ -186,7 +194,7 @@ def regression_loss_no_calc_grid(q, k, coord_q, coord_k, pos_ratio=0.5):
 
     # calc dist grids
     dist_coord = torch.sqrt((coord_q_x.view(-1, H * W, 1) - coord_k_x.view(-1, 1, H * W)) ** 2
-                             + (coord_q_y.view(-1, H * W, 1) - coord_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
+                            + (coord_q_y.view(-1, H * W, 1) - coord_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
 
     # calc pos mask, exclud_mask
     pos_mask_bool = dist_coord < pos_ratio
@@ -205,19 +213,21 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
-    if isinstance(coord_q, list):
-        coord_q, mask = coord_q
-        coord_k, mask = coord_k
-        mask = mask & mask
-        return flow_loss_dataset(q, k, coord_q, coord_k, mask)
+    N, C, H, W = q.shape
     if same_loss:
         return regression_loss_same(q, k)
 
-    N, C, H, W = q.shape
     if is_flowe:
         # max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         # pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
         return flowe_loss(q, k, coord_q, coord_k)
+
+    is_no_calc_grid = isinstance(coord_q, list)
+    if not is_no_calc_grid:
+        ndim = coord_q.ndim
+        is_no_calc_grid = ndim > 2
+    if is_no_calc_grid:
+        return regression_loss_no_calc_grid(q, k, coord_q, coord_k, pos_ratio)
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)

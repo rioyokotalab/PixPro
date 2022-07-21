@@ -148,6 +148,7 @@ def main(args):
         if epoch >= args.debug_epochs:
             break
 
+
 def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer):
     """
     one epoch training
@@ -159,7 +160,14 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
     end = time.time()
     for idx, data in enumerate(train_loader):
-        data = [item.cuda(non_blocking=True) for item in data]
+        data_list = []
+        for item in data:
+            if isinstance(item, list) or isinstance(item, tuple):
+                tmp = [l_item.cuda(non_blocking=True) for l_item in item]
+            else:
+                tmp = item.cuda(non_blocking=True)
+            data_list.append(tmp)
+        data = data_list
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss = model(data[0], data[1], data[2], data[3])
@@ -197,8 +205,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         if dist.get_rank() == 0:
             global_step = (epoch - 1) * train_len + idx
             wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
-                "epoch": epoch - 1, "global_step": global_step, "time": batch_time.val,
-                "time/avg": batch_time.avg})
+                       "epoch": epoch - 1, "global_step": global_step, "time": batch_time.val,
+                       "time/avg": batch_time.avg})
+
 
 if __name__ == '__main__':
     opt = parse_option(stage='pre-train')
