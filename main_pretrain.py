@@ -209,18 +209,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                        "time/avg": batch_time.avg})
 
 
-if __name__ == '__main__':
-    opt = parse_option(stage='pre-train')
-
-    if opt.amp_opt_level != "O0":
-        assert amp is not None, "amp not installed!"
-
-    torch.cuda.set_device(opt.local_rank)
-    torch.distributed.init_process_group(backend='nccl', init_method='env://')
-    cudnn.benchmark = True
-
+def main_prog(opt):
     # setup logger
     os.makedirs(opt.output_dir, exist_ok=True)
+    global logger
     logger = setup_logger(output=opt.output_dir, distributed_rank=dist.get_rank(), name="contrast")
     if dist.get_rank() == 0:
         path = os.path.join(opt.output_dir, "config.json")
@@ -262,4 +254,17 @@ if __name__ == '__main__':
                     new_f = f + ".txt"
                     copyfile(f, new_f)
             wandb.save(new_f, base_path=out_root)
+
+
+if __name__ == '__main__':
+    opt = parse_option(stage='pre-train')
+
+    if opt.amp_opt_level != "O0":
+        assert amp is not None, "amp not installed!"
+
+    torch.cuda.set_device(opt.local_rank)
+    torch.distributed.init_process_group(backend='nccl', init_method='env://')
+    cudnn.benchmark = True
+
+    main_prog(opt)
 
