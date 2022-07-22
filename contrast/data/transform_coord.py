@@ -35,10 +35,12 @@ def _get_image_size(img):
         raise TypeError("Unexpected type {}".format(type(img)))
 
 
-def get_init_grid(grid_size, normalize_type=None):
+def get_init_grid(grid_size, normalize_type=None, is_corner=True):
     height, width = grid_size
     grid = torch.meshgrid(torch.arange(height), torch.arange(width))
     grid = torch.stack(grid[::-1], dim=0).float()
+    if not is_corner:
+        grid = grid + 0.5
     if normalize_type is not None:
         if normalize_type == "norm":
             grid = normalize_grid(grid)
@@ -129,11 +131,12 @@ class Compose(object):
         # grid_size = (h, w)
         coord_size = (grid_size[0] // 8, grid_size[1] // 8)
 
+        is_corner = False
         # normalize_type = None
         # normalize_type = "norm"
         normalize_type = "center"
-        init_grid = get_init_grid(grid_size, normalize_type)
-        init_coord = get_init_grid(coord_size, normalize_type)
+        init_grid = get_init_grid(grid_size, normalize_type, is_corner)
+        init_coord = get_init_grid(coord_size, normalize_type, is_corner)
         # init_mask = torch.ones(coord_size, dtype=bool)
         if isinstance(coord, list):
             coord, params = coord
@@ -187,13 +190,15 @@ class Compose(object):
 
         img_tmp = img.unsqueeze(0)
         grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
-        img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=True)
+        # img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=True)
+        img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=is_corner)
         # img_tmp = F.resize(img_tmp[0], list(self.crop_size))
         img = img_tmp[0].clone()
         if self.two_crop:
             img2_tmp = img2.unsqueeze(0)
             grid2_tmp = grid2.unsqueeze(0).permute(0, 2, 3, 1)
-            img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=True)
+            # img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=True)
+            img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=is_corner)
             # img2_tmp = F.resize(img2_tmp[0], list(self.crop_size))
             img2 = img2_tmp[0].clone()
 
