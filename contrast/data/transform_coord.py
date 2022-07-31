@@ -135,6 +135,7 @@ class Compose(object):
         self.crop_size = tmp_crop_size
         # self.crop_size = None
 
+    @torch.no_grad()
     def calc_optical_flow(self, pil_imgs, out_size=None, is_norm=True):
         assert self.flow_model is not None
 
@@ -143,6 +144,8 @@ class Compose(object):
         imgs = padder.pad(*imgs)
 
         self.flow_model.eval()
+        for param in self.flow_model.parameters():
+            param.requires_grad = False
         flow_fwds = torch.stack([
             self.flow_model(img1, img2, test_mode=True)[0]
             for img1, img2 in zip(imgs[:-1], imgs[1:])
