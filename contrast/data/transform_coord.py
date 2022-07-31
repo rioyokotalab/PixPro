@@ -57,7 +57,7 @@ def get_crop_size(transforms: List):
     return crop_size
 
 
-def get_coord(size, coord):
+def get_coord(size, coord, is_corner=True):
     H, W = size
     # C, H, W = coord.shape
     array = torch.meshgrid(torch.arange(H), torch.arange(W))
@@ -72,10 +72,13 @@ def get_coord(size, coord):
     start_y = coord[1].view(1, 1)
 
     # [bs, 7, 7]
-    # center_q_x = (x_array + 0.5) * bin_width + start_x
-    # center_q_y = (y_array + 0.5) * bin_height + start_y
-    array[0] = array[0] * bin_width + start_x
-    array[1] = array[1] * bin_height + start_y
+    if is_corner:
+        array[0] = array[0] * bin_width + start_x
+        array[1] = array[1] * bin_height + start_y
+    else:
+        array[0] = (array[0] + 0.5) * bin_width + start_x
+        array[1] = (array[1] + 0.5) * bin_height + start_y
+
     array = 2 * array - 1
     return array
 
@@ -160,14 +163,15 @@ class Compose(object):
 
         # official coord
         grids, coord = coord
-        # calc_coord = get_coord(coord_size, coord)
+        calc_coord = get_coord(grid_size, coord, is_corner)
         if self.two_crop:
             grids2, coord2 = coord2
-            # calc_coord2 = get_coord(coord_size, coord2)
+            calc_coord2 = get_coord(grid_size, coord2, is_corner)
 
         # my coord
         grid, mycoord = grids
         mycoord = normalize_grid_ceterized(mycoord)
+        # mycoord = F.resize(mycoord, self.crop_size)
         grid = normalize_grid_ceterized(grid)
         mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
         coord = [coord, grid.clone()]
@@ -175,6 +179,7 @@ class Compose(object):
         if self.two_crop:
             grid2, mycoord2 = grids2
             mycoord2 = normalize_grid_ceterized(mycoord2)
+            # mycoord2 = F.resize(mycoord2, self.crop_size)
             grid2 = normalize_grid_ceterized(grid2)
             mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
             mask = mask & mask2
@@ -182,11 +187,15 @@ class Compose(object):
             # coord2 = mycoord2.clone()
 
         # if torch.distributed.get_rank() == 0:
-        #     print(calc_coord.shape, mycoord.shape)
-        #     print(calc_coord, mycoord, calc_coord == mycoord)
-        #     print(calc_coord2, mycoord2, calc_coord2 == mycoord2)
+        #     print(calc_coord.shape, mycoord.shape, grid.shape)
+        #     print(calc_coord, mycoord, grid, coord, calc_coord==grid, calc_coord == mycoord)
+        #     print(calc_coord2, mycoord2, grid2, coord2, calc_coord2==grid2, calc_coord2 == mycoord2)
+        #     print(calc_coord, grid, coord)
+        #     print(calc_coord2, grid2, coord2)
         #     print(mycoord[0][mask], mycoord[1][mask])
         #     print(mycoord2[0][mask], mycoord2[1][mask])
+        #     print(grid[0][mask], grid[1][mask])
+        #     print(grid2[0][mask], grid2[1][mask])
 
         img_tmp = img.unsqueeze(0)
         grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
@@ -553,10 +562,14 @@ class RandomResizedCropCoord(object):
             grid[1] = grid[1] / scale_now_h
             grid[0] = grid[0] + (diff_x1 * grid_w)
             grid[1] = grid[1] + (diff_y1 * grid_h)
-            mycoord[0] = mycoord[0] * scale_now_w
-            mycoord[1] = mycoord[1] * scale_now_h
             mycoord[0] = mycoord[0] - (diff_x1 * coord_w)
             mycoord[1] = mycoord[1] - (diff_x1 * coord_h)
+            mycoord[0] = mycoord[0] * scale_now_w
+            mycoord[1] = mycoord[1] * scale_now_h
+            # mycoord[0] = mycoord[0] / scale_now_w
+            # mycoord[1] = mycoord[1] / scale_now_h
+            # mycoord[0] = mycoord[0] + (diff_x1 * coord_w)
+            # mycoord[1] = mycoord[1] + (diff_x1 * coord_h)
             coord = [(grid, mycoord), coord]
 
         if same_two:
@@ -576,35 +589,59 @@ class RandomResizedCropCoord(object):
 
 @torch.no_grad()
 def normalize_grid(grid):
-    _, ht, wd = grid.shape
+    ndim = grid.ndim
+    assert ndim == 3 or ndim == 4
+    ht, wd = grid.shape[-2:]
     grid_norm = grid.clone()
-    grid_norm[0] = 2 * grid_norm[0] / (wd - 1) - 1
-    grid_norm[1] = 2 * grid_norm[1] / (ht - 1) - 1
+    if ndim == 3:
+        grid_norm[0] = 2 * grid_norm[0] / (wd - 1) - 1
+        grid_norm[1] = 2 * grid_norm[1] / (ht - 1) - 1
+    elif ndim == 4:
+        grid_norm[:, 0] = 2 * grid_norm[:, 0] / (wd - 1) - 1
+        grid_norm[:, 1] = 2 * grid_norm[:, 1] / (ht - 1) - 1
     return grid_norm
 
 
 @torch.no_grad()
 def normalize_grid_ceterized(grid_cent):
-    _, ht, wd = grid_cent.shape
+    ndim = grid_cent.ndim
+    assert ndim == 3 or ndim == 4
+    ht, wd = grid_cent.shape[-2:]
     grid_norm = grid_cent.clone()
-    grid_norm[0] = grid_norm[0] / (wd - 1)
-    grid_norm[1] = grid_norm[1] / (ht - 1)
+    if ndim == 3:
+        grid_norm[0] = grid_norm[0] / (wd - 1)
+        grid_norm[1] = grid_norm[1] / (ht - 1)
+    elif ndim == 4:
+        grid_norm[:, 0] = grid_norm[:, 0] / (wd - 1)
+        grid_norm[:, 1] = grid_norm[:, 1] / (ht - 1)
     return grid_norm
 
 
 @torch.no_grad()
 def centerize_grid(grid):
-    _, ht, wd = grid.shape
+    ndim = grid.ndim
+    assert ndim == 3 or ndim == 4
+    ht, wd = grid.shape[-2:]
     grid_cent = grid.clone()
-    grid_cent[0] = 2 * grid_cent[0] - (wd - 1)
-    grid_cent[1] = 2 * grid_cent[1] - (ht - 1)
+    if ndim == 3:
+        grid_cent[0] = 2 * grid_cent[0] - (wd - 1)
+        grid_cent[1] = 2 * grid_cent[1] - (ht - 1)
+    elif ndim == 4:
+        grid_cent[:, 0] = 2 * grid_cent[:, 0] - (wd - 1)
+        grid_cent[:, 1] = 2 * grid_cent[:, 1] - (ht - 1)
     return grid_cent
 
 
 @torch.no_grad()
 def denormalize_cenetrize_grid(grid_norm):
-    _, ht, wd = grid_norm.shape
+    ndim = grid_norm.ndim
+    assert ndim == 3 or ndim == 4
+    ht, wd = grid_norm.shape[-2:]
     grid_cent = grid_norm.clone()
-    grid_cent[0] = grid_cent[0] * (wd - 1)
-    grid_cent[1] = grid_cent[1] * (ht - 1)
+    if ndim == 3:
+        grid_cent[0] = grid_cent[0] * (wd - 1)
+        grid_cent[1] = grid_cent[1] * (ht - 1)
+    elif ndim == 4:
+        grid_cent[:, 0] = grid_cent[:, 0] * (wd - 1)
+        grid_cent[:, 1] = grid_cent[:, 1] * (ht - 1)
     return grid_cent
