@@ -16,7 +16,9 @@ class GaussianBlur(object):
         return x
 
 
-def get_transform(aug_type, crop, image_size=224, two_crop=False):
+def get_transform(aug_type, crop, image_size=224, two_crop=False,
+                  optical_flow_model=None, alpha_1=0.01, alpha_2=0.5):
+    # is_use_flow = optical_flow_model is not None
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     if aug_type == "InstDisc":  # used in InstDisc and MoCo v1
@@ -69,7 +71,9 @@ def get_transform(aug_type, crop, image_size=224, two_crop=False):
             normalize,
         ]
         transform_tuple = (transform_1, transform_2)
-        transform = transform_coord.Compose(transform_tuple, two_crop=two_crop)
+        transform = transform_coord.Compose(transform_tuple, two_crop=two_crop,
+                                            optical_flow_model=optical_flow_model,
+                                            alpha_1=alpha_1, alpha_2=alpha_2)
     elif aug_type == 'RandAug':  # used in InfoMin
         rgb_mean = (0.485, 0.456, 0.406)
         ra_params = dict(

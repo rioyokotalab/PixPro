@@ -1,6 +1,7 @@
 import os
 
 import numpy as np
+import torch
 import torch.distributed as dist
 from torch.utils.data import DataLoader, SubsetRandomSampler
 from torch.utils.data.distributed import DistributedSampler
@@ -8,12 +9,24 @@ from torch.utils.data.distributed import DistributedSampler
 from .transform import get_transform
 from .dataset import ImageFolder
 
+from contrast.flow import RAFT
+
 
 def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=False):
     image_size = args.image_size
     if image_size == 1024:
         image_size = (512, 1024)
-    transform = get_transform(aug_type, args.crop, image_size, two_crop)
+
+    flow_model = None
+    if args.use_flow:
+        flow_model = torch.nn.DataParallel(RAFT(args))
+        weights = torch.load(args.flow_model, map_location="cpu")
+        flow_model.load_state_dict(weights)
+        # flow_model = flow_model.module.cuda()
+        flow_model = flow_model.module.cpu()
+
+    transform = get_transform(aug_type, args.crop, image_size, two_crop,
+                              flow_model, args.alpha1, args.alpha2)
 
     # dataset
     if args.zip:

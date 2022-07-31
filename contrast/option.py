@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from contrast import resnet
 from contrast.util import MyHelpFormatter
@@ -23,6 +24,12 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--image-size', type=int, default=224, help='image crop size')
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
     parser.add_argument('--n-frames', type=int, default=1, help='num of frames to load if dataset is video')
+    parser.add_argument('--use_flow', action="store_true", help='use optical flow by raft')
+    # RAFT
+    parser.add_argument('--flow_model', default='pretrained_flow/models/raft-small.pth',
+                        type=str, help='/path/to/pretrained flow model')
+    parser.add_argument('--alpha1', type=float, default=0.01, help='optical flow mask hyper param')
+    parser.add_argument('--alpha2', type=float, default=0.5, help='optical flow mask hyper param')
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')
@@ -89,5 +96,11 @@ def parse_option(stage='pre-train'):
         parser.add_argument('--flowe-loss', action='store_true')
 
     args = parser.parse_args()
+
+    if args.flow_model is not None:
+        base_name = os.path.basename(args.flow_model)
+        if "small" in base_name:
+            args.small = True
+        args.mixed_precision = False
 
     return args

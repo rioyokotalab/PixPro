@@ -15,6 +15,7 @@ from typing import List, Tuple, Union
 from torchvision.transforms import functional as F
 import torch.nn.functional as nnF
 
+from contrast.flow import InputPadder
 
 _pil_interpolation_to_str = {
     Image.NEAREST: 'PIL.Image.NEAREST',
@@ -57,6 +58,13 @@ def get_crop_size(transforms: List):
     return crop_size
 
 
+def load_img_for_raft(img: Image):
+    img = np.array(img).astype(np.uint8)
+    img = torch.from_numpy(img).permute(2, 0, 1).float()
+    return img[None]
+    # return img[None].cuda()
+
+
 def get_coord(size, coord, is_corner=True):
     H, W = size
     # C, H, W = coord.shape
@@ -97,7 +105,10 @@ class Compose(object):
     """
 
     def __init__(self, transforms: Union[Tuple[List], List],
-                 same_two=False, two_crop=False):
+                 same_two=False, two_crop=False,
+                 optical_flow_model=None,
+                 *,
+                 alpha_1=0.01, alpha_2=0.5):
         if isinstance(transforms, tuple):
             self.transforms: Tuple[List] = transforms
         else:
@@ -107,6 +118,11 @@ class Compose(object):
         num_transform = len(self.transforms)
         if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
+
+        self.flow_model = optical_flow_model
+        self.alpha_1, self.alpha_2 = alpha_1, alpha_2
+        self.use_flow = self.flow_model is not None
+
         crop_size_list = []
         for transforms in self.transforms:
             tmp_crop_size = get_crop_size(transforms)
@@ -119,12 +135,80 @@ class Compose(object):
         self.crop_size = tmp_crop_size
         # self.crop_size = None
 
+    def calc_optical_flow(self, pil_imgs, out_size=None, is_norm=True):
+        assert self.flow_model is not None
+
+        imgs = [load_img_for_raft(img) for img in pil_imgs]
+        padder = InputPadder(imgs[0].shape)
+        imgs = padder.pad(*imgs)
+
+        self.flow_model.eval()
+        flow_fwds = torch.stack([
+            self.flow_model(img1, img2, test_mode=True)[0]
+            for img1, img2 in zip(imgs[:-1], imgs[1:])
+        ])
+        flow_bwds = torch.stack([
+            self.flow_model(img1, img2, test_mode=True)[0]
+            for img1, img2 in zip(imgs[1:][::-1], imgs[:-1][::-1])
+        ])
+        flow_fwd = concat_flow(flow_fwds, is_norm)
+        flow_bwd = concat_flow(flow_bwds, is_norm)
+        coord1, coord2, mask = self.forward_backward_consistency(
+            flow_fwd, flow_bwd, is_norm)
+
+        return [coord1, coord2], [flow_fwd, flow_bwd], mask
+
+    # implement: https://arxiv.org/pdf/1711.07837.pdf
+    @torch.no_grad()
+    def forward_backward_consistency(self, flow_fwd_s, flow_bwd_s, is_normed=True):
+        flow_fwd = flow_fwd_s.clone().detach()
+        flow_bwd = flow_bwd_s.clone().detach()
+        alpha_1, alpha_2 = self.alpha_1, self.alpha_2
+
+        ht, wd = flow_fwd.shape[-2:]
+        coord1 = torch.meshgrid(torch.arange(ht), torch.arange(wd))
+        coord1 = torch.stack(coord1[::-1], dim=0).float()
+        if is_normed:
+            coord1 = normalize_grid(coord1)
+        coord1 = coord1.to(flow_fwd.device)
+
+        coord2 = coord1 + flow_fwd
+        coord2 = coord2.squeeze(0)
+        if is_normed:
+            coord2_norm = coord2.clone()
+        else:
+            coord2_norm = normalize_grid(coord2)
+        ndim = coord2_norm.ndim
+        if ndim == 3:
+            coord2_norm = coord2_norm.unsqueeze(0)
+        ndim = flow_fwd.ndim
+        if ndim == 3:
+            flow_fwd = flow_fwd.unsqueeze(0)
+            flow_bwd = flow_bwd.unsqueeze(0)
+
+        mask = (torch.abs(coord2_norm[:, 0]) < 1) & (torch.abs(coord2_norm[:, 1]) < 1)
+        flow_bwd_interpolate = grid_sample_flow(flow_bwd, coord2_norm)
+        flow_cycle = flow_fwd + flow_bwd_interpolate
+
+        flow_cycle_norm = (flow_cycle**2).sum(1)
+        eps = alpha_1 * ((flow_fwd**2).sum(1) +
+                         (flow_bwd_interpolate**2).sum(1)) + alpha_2
+
+        mask = mask & ((flow_cycle_norm - eps) <= 0)
+        return coord1, coord2, mask
+
     def __call__(self, imgs, coord=None):
         is_list = isinstance(imgs, list) or isinstance(imgs, tuple)
         if is_list:
             image1, image2 = imgs[0], imgs[-1]
         else:
             image1, image2 = imgs, imgs
+
+        if self.use_flow:
+            flow_outs = self.calc_optical_flow(imgs, is_norm=False)
+            flow_grids, flow_fwd_bwd, mask = flow_outs
+            flow_grid1, flow_grid2 = flow_grids
+            flow_fwd, flow_bwd = flow_fwd_bwd
 
         grid_size = self.crop_size
         if grid_size is None:
@@ -154,6 +238,7 @@ class Compose(object):
             in_coord = coord if self.same_two else [coord, None]
             in_coord, params = in_coord
             in_coord = [(init_grid.clone(), init_coord.clone()), in_coord]
+            # in_coord = [(init_grid.clone(), flow_grid2.clone()), in_coord]
             in_coord = [in_coord, params]
             img2, coord2 = self.main_call(image2, in_coord, self.transforms[-1])
         if self.same_two:
@@ -180,6 +265,16 @@ class Compose(object):
             grid2, mycoord2 = grids2
             mycoord2 = normalize_grid_ceterized(mycoord2)
             # mycoord2 = F.resize(mycoord2, self.crop_size)
+
+            if self.use_flow:
+                grid_norm2 = normalize_grid_ceterized(grid2)
+                if flow_fwd.ndim == 3:
+                    flow_fwd = flow_fwd.unsqueeze(0)
+                flow_t = grid_sample_flow(flow_fwd, grid_norm2.unsqueeze(0))
+                grid2_flow = grid2 + flow_t
+                grid2_flow = normalize_grid_ceterized(grid2_flow)
+                grid2_flow = grid2_flow.squeeze(0)
+
             grid2 = normalize_grid_ceterized(grid2)
             mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
             mask = mask & mask2
@@ -645,3 +740,57 @@ def denormalize_cenetrize_grid(grid_norm):
         grid_cent[:, 0] = grid_cent[:, 0] * (wd - 1)
         grid_cent[:, 1] = grid_cent[:, 1] * (ht - 1)
     return grid_cent
+
+
+@torch.no_grad()
+def concat_flow(flows, is_norm=True):
+    ndim = flows.ndim
+    ht, wd = flows.shape[-2:]
+    coord1 = torch.meshgrid(torch.arange(ht), torch.arange(wd))
+    coord1 = torch.stack(coord1[::-1], dim=0).float()
+    if is_norm:
+        coord1 = normalize_grid(coord1)
+    coord1 = coord1.to(flows.device)
+
+    coord2 = coord1.clone()
+    for flow in flows:
+        flow_tmp = flow.clone()
+        if is_norm:
+            coord2_norm = coord2.clone().unsqueeze(0)
+            flow_tmp = normalize_flow(flow_tmp)
+            if ndim < 4:
+                flow_tmp = flow_tmp.unsqueeze(0)
+        else:
+            coord2_norm = normalize_grid(coord2).unsqueeze(0)
+            if ndim < 4:
+                flow_tmp = flow_tmp.unsqueeze(0)
+        flow_interpolate = grid_sample_flow(flow_tmp, coord2_norm)
+        coord2 = coord2 + flow_interpolate
+    return coord2 - coord1
+
+
+@torch.no_grad()
+def normalize_flow(flow):
+    ht, wd = flow.shape[-2:]
+    flow_norm = flow.clone()
+    flow_norm[0] = 2 * flow_norm[0] / (wd - 1)
+    flow_norm[1] = 2 * flow_norm[1] / (ht - 1)
+    return flow_norm
+
+
+@torch.no_grad()
+def grid_sample_flow(flow, coord_norm, is_corner=True):
+    flow_interpolate = nnF.grid_sample(flow,
+                                       coord_norm.permute(0, 2, 3, 1),
+                                       align_corners=is_corner)
+    return flow_interpolate
+
+
+def down_flow(flow, times: int, mode='bilinear'):
+    new_size = (flow.shape[-2] // times, flow.shape[-1] // times)
+    return nnF.interpolate(flow, size=new_size, mode=mode, align_corners=True) / times
+
+
+def up_flow(flow, times: int, mode='bilinear'):
+    new_size = (times * flow.shape[-2], times * flow.shape[-1])
+    return times * nnF.interpolate(flow, size=new_size, mode=mode, align_corners=True)
