@@ -267,4 +267,3 @@ if __name__ == '__main__':
     cudnn.benchmark = True
 
     main_prog(opt)
-
