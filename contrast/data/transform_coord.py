@@ -97,7 +97,8 @@ class Compose(object):
     """
 
     def __init__(self, transforms: Union[Tuple[List], List],
-                 same_two=False, two_crop=False, is_corner=True):
+                 same_two=False, two_crop=False, is_corner=True,
+                 same_grid=False):
         if isinstance(transforms, tuple):
             self.transforms: Tuple[List] = transforms
         else:
@@ -105,6 +106,7 @@ class Compose(object):
         self.same_two = same_two
         self.two_crop = two_crop
         self.is_corner = is_corner
+        self.same_grid = same_grid
         num_transform = len(self.transforms)
         if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
@@ -128,11 +130,9 @@ class Compose(object):
             image1, image2 = imgs, imgs
 
         grid_size = self.crop_size
-        if grid_size is None:
+        if self.same_grid or grid_size is None:
             w, h = _get_image_size(image1)
             grid_size = (h, w)
-        # w, h = _get_image_size(image1)
-        # grid_size = (h, w)
         coord_size = (grid_size[0] // 8, grid_size[1] // 8)
 
         # normalize_type = None
@@ -192,14 +192,18 @@ class Compose(object):
         img_tmp = img.unsqueeze(0)
         grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
         img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=self.is_corner)
-        # img_tmp = F.resize(img_tmp[0], list(self.crop_size))
+        if self.same_grid and self.crop_size is not None:
+            img_tmp = F.resize(img_tmp[0], list(self.crop_size))
+            img_tmp = img_tmp.unsqueeze(0)
         img = img_tmp[0].clone()
         if self.two_crop:
             img2_tmp = img2.unsqueeze(0)
             grid2_tmp = grid2.unsqueeze(0).permute(0, 2, 3, 1)
             img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp,
                                        align_corners=self.is_corner)
-            # img2_tmp = F.resize(img2_tmp[0], list(self.crop_size))
+            if self.same_grid and self.crop_size is not None:
+                img2_tmp = F.resize(img2_tmp[0], list(self.crop_size))
+                img2_tmp = img2_tmp.unsqueeze(0)
             img2 = img2_tmp[0].clone()
 
         if self.two_crop:

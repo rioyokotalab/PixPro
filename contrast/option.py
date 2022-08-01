@@ -24,6 +24,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
     parser.add_argument('--n-frames', type=int, default=1, help='num of frames to load if dataset is video')
     parser.add_argument('--is_center', action='store_true', help='calc grid of center')
+    parser.add_argument('--same_grid', action='store_true', help='resize img after grid sample')
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')

@@ -14,7 +14,8 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
     if image_size == 1024:
         image_size = (512, 1024)
     is_corner = not args.is_center
-    transform = get_transform(aug_type, args.crop, image_size, two_crop, is_corner)
+    transform = get_transform(aug_type, args.crop, image_size, two_crop, is_corner,
+                              args.same_grid)
 
     # dataset
     if args.zip:
