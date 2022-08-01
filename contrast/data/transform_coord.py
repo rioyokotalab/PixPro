@@ -12,7 +12,7 @@ import warnings
 
 from typing import List, Tuple, Union
 
-import torch
+# import torch
 from torchvision.transforms import functional as F
 import torch.nn.functional as nnF
 
@@ -36,10 +36,12 @@ def _get_image_size(img):
         raise TypeError("Unexpected type {}".format(type(img)))
 
 
-def get_init_grid(grid_size, normalize_type=None):
+def get_init_grid(grid_size, normalize_type=None, is_corner=True):
     height, width = grid_size
     grid = torch.meshgrid(torch.arange(height), torch.arange(width))
     grid = torch.stack(grid[::-1], dim=0).float()
+    if not is_corner:
+        grid = grid + 0.5
     if normalize_type is not None:
         if normalize_type == "norm":
             grid = normalize_grid(grid)
@@ -95,13 +97,14 @@ class Compose(object):
     """
 
     def __init__(self, transforms: Union[Tuple[List], List],
-                 same_two=False, two_crop=False):
+                 same_two=False, two_crop=False, is_corner=True):
         if isinstance(transforms, tuple):
             self.transforms: Tuple[List] = transforms
         else:
             self.transforms = (transforms,)
         self.same_two = same_two
         self.two_crop = two_crop
+        self.is_corner = is_corner
         num_transform = len(self.transforms)
         if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
@@ -135,8 +138,8 @@ class Compose(object):
         # normalize_type = None
         # normalize_type = "norm"
         normalize_type = "center"
-        init_grid = get_init_grid(grid_size, normalize_type)
-        init_coord = get_init_grid(coord_size, normalize_type)
+        init_grid = get_init_grid(grid_size, normalize_type, self.is_corner)
+        init_coord = get_init_grid(coord_size, normalize_type, self.is_corner)
         # init_mask = torch.ones(coord_size, dtype=bool)
         if isinstance(coord, list):
             coord, params = coord
@@ -154,7 +157,7 @@ class Compose(object):
             in_coord = [in_coord, params]
             img2, coord2 = self.main_call(image2, in_coord, self.transforms[-1])
         if self.same_two:
-            coord, _  = coord
+            coord, _ = coord
             if self.two_crop:
                 coord2, _ = coord2
 
@@ -169,14 +172,14 @@ class Compose(object):
         grid, mycoord = grids
         mycoord = normalize_grid_ceterized(mycoord)
         grid = normalize_grid_ceterized(grid)
-        mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
+        # mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
         # coord = mycoord.clone()
         if self.two_crop:
             grid2, mycoord2 = grids2
             mycoord2 = normalize_grid_ceterized(mycoord2)
             grid2 = normalize_grid_ceterized(grid2)
-            mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
-            mask = mask & mask2
+            # mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
+            # mask = mask & mask2
             # coord2 = mycoord2.clone()
 
         # if torch.distributed.get_rank() == 0:
@@ -188,13 +191,14 @@ class Compose(object):
 
         img_tmp = img.unsqueeze(0)
         grid_tmp = grid.unsqueeze(0).permute(0, 2, 3, 1)
-        img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=True)
+        img_tmp = nnF.grid_sample(img_tmp, grid_tmp, align_corners=self.is_corner)
         # img_tmp = F.resize(img_tmp[0], list(self.crop_size))
         img = img_tmp[0].clone()
         if self.two_crop:
             img2_tmp = img2.unsqueeze(0)
             grid2_tmp = grid2.unsqueeze(0).permute(0, 2, 3, 1)
-            img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp, align_corners=True)
+            img2_tmp = nnF.grid_sample(img2_tmp, grid2_tmp,
+                                       align_corners=self.is_corner)
             # img2_tmp = F.resize(img2_tmp[0], list(self.crop_size))
             img2 = img2_tmp[0].clone()
 
