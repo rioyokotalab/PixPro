@@ -158,7 +158,7 @@ def main_prog(opt):
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
         logger.info("Full config saved to {}".format(path))
-        init_wandb(opt)
+        init_wandb(opt, project="ssl_test")
         wandb.save(path, base_path=opt.output_dir)
 
     # print args
