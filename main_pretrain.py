@@ -180,13 +180,15 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         batch_time.update(time.time() - end)
         end = time.time()
 
+        loss_plus = loss.item() + 4.0
+
         train_len = len(train_loader)
         if idx % args.print_freq == 0:
             lr = optimizer.param_groups[0]['lr']
             logger.info(
                 f'Train: [{epoch}/{args.epochs}][{idx}/{train_len}]  '
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
-                f'lr {lr:.3f}  '
+                f'lr {lr:.3f}  loss_plus {loss_plus:.3f}'
                 f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f})')
 
             # tensorboard logger
@@ -194,11 +196,13 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 step = (epoch - 1) * len(train_loader) + idx
                 summary_writer.add_scalar('lr', lr, step)
                 summary_writer.add_scalar('loss', loss_meter.val, step)
+                summary_writer.add_scalar('loss_plus', loss_plus, step)
 
         if dist.get_rank() == 0:
             global_step = (epoch - 1) * train_len + idx
             wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
-                       "epoch": epoch - 1, "global_step": global_step, "time": batch_time.val,
+                       "loss/plus": loss_plus, "epoch": epoch - 1,
+                       "global_step": global_step, "time": batch_time.val,
                        "time/avg": batch_time.avg})
 
 

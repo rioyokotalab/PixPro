@@ -28,8 +28,10 @@ def dist_setup():
     print(
         "rank: {}, world_size: {}, local_rank: {}, local_size: {}, node_rank: {}, {}"
         .format(rank, world_size, local_rank, local_size, node_rank, host_port_str))
-    dist.init_process_group("nccl", init_method=method, rank=rank, world_size=world_size)
-    print("Rank: {}, Size: {}, Host: {} Port: {}".format(dist.get_rank(), dist.get_world_size(),
+    dist.init_process_group("nccl", init_method=method, rank=rank,
+                            world_size=world_size)
+    print("Rank: {}, Size: {}, Host: {} Port: {}".format(dist.get_rank(),
+                                                         dist.get_world_size(),
                                                          master_addr, master_port))
     return local_rank
 
