@@ -36,31 +36,16 @@ def _get_image_size(img):
         raise TypeError("Unexpected type {}".format(type(img)))
 
 
-def get_init_grid(grid_size, device, normalize_type=None):
+def get_init_grid(grid_size, normalize_type=None):
     height, width = grid_size
     grid = torch.meshgrid(torch.arange(height), torch.arange(width))
-    grid = torch.stack(grid[::-1], dim=0).float().to(device)
+    grid = torch.stack(grid[::-1], dim=0).float()
     if normalize_type is not None:
         if normalize_type == "norm":
             grid = normalize_grid(grid)
         elif normalize_type == "center":
             grid = centerize_grid(grid)
     return grid
-
-
-def get_device(is_set=False):
-    device_name = "cuda" if torch.cuda.is_available() else "cpu"
-    rank = 0
-    if torch.distributed.is_initialized():
-        rank = torch.distributed.get_rank()
-    if device_name == "cuda":
-        ngpus = torch.cuda.device_count()
-        local_rank = rank % ngpus
-        if is_set:
-            torch.cuda.set_device(local_rank)
-        device = torch.device(device_name, local_rank)
-    else:
-        device = torch.device(device_name)
 
 
 def get_crop_size(transforms: List):
@@ -71,7 +56,7 @@ def get_crop_size(transforms: List):
     return crop_size
 
 
-def get_coord(size, coord):
+def get_coord(size, coord, is_corner=True):
     H, W = size
     # C, H, W = coord.shape
     array = torch.meshgrid(torch.arange(H), torch.arange(W))
@@ -86,10 +71,12 @@ def get_coord(size, coord):
     start_y = coord[1].view(1, 1)
 
     # [bs, 7, 7]
-    # center_q_x = (x_array + 0.5) * bin_width + start_x
-    # center_q_y = (y_array + 0.5) * bin_height + start_y
-    array[0] = array[0] * bin_width + start_x
-    array[1] = array[1] * bin_height + start_y
+    if is_corner:
+        array[0] = array[0] * bin_width + start_x
+        array[1] = array[1] * bin_height + start_y
+    else:
+        array[0] = (array[0] + 0.5) * bin_width + start_x
+        array[1] = (array[1] + 0.5) * bin_height + start_y
     array = 2 * array - 1
     return array
 
@@ -118,7 +105,6 @@ class Compose(object):
         num_transform = len(self.transforms)
         if num_transform > 2:
             raise Exception(f"Unsupport for # of transforms is {num_transform}")
-        self.device = get_device()
         crop_size_list = []
         for transforms in self.transforms:
             tmp_crop_size = get_crop_size(transforms)
@@ -149,9 +135,9 @@ class Compose(object):
         # normalize_type = None
         # normalize_type = "norm"
         normalize_type = "center"
-        init_grid = get_init_grid(grid_size, self.device, normalize_type)
-        init_coord = get_init_grid(coord_size, self.device, normalize_type)
-        # init_mask = torch.ones(coord_size, dtype=bool).to(self.device)
+        init_grid = get_init_grid(grid_size, normalize_type)
+        init_coord = get_init_grid(coord_size, normalize_type)
+        # init_mask = torch.ones(coord_size, dtype=bool)
         if isinstance(coord, list):
             coord, params = coord
             coord = [(init_grid.clone(), init_coord.clone()), coord]
@@ -174,10 +160,10 @@ class Compose(object):
 
         # official coord
         grids, coord = coord
-        calc_coord = get_coord(coord_size, coord)
+        # calc_coord = get_coord(coord_size, coord)
         if self.two_crop:
             grids2, coord2 = coord2
-            calc_coord2 = get_coord(coord_size, coord2)
+            # calc_coord2 = get_coord(coord_size, coord2)
 
         # my coord
         grid, mycoord = grids
