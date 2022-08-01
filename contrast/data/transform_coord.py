@@ -251,10 +251,10 @@ class Compose(object):
 
         # official coord
         grids, coord = coord
-        calc_coord = get_coord(grid_size, coord, is_corner)
+        # calc_coord = get_coord(grid_size, coord, is_corner)
         if self.two_crop:
             grids2, coord2 = coord2
-            calc_coord2 = get_coord(grid_size, coord2, is_corner)
+            # calc_coord2 = get_coord(grid_size, coord2, is_corner)
 
         # my coord
         grid, mycoord = grids
@@ -275,8 +275,9 @@ class Compose(object):
                     flow_fwd = flow_fwd.unsqueeze(0)
                 flow_t = grid_sample_flow(flow_fwd, grid_norm2.unsqueeze(0))
                 grid2_flow = grid2 + flow_t
-                grid2_flow = normalize_grid_ceterized(grid2_flow)
+                # grid2_flow = normalize_grid_ceterized(grid2_flow)
                 grid2_flow = grid2_flow.squeeze(0)
+                grid2 = grid2_flow.clone()
 
             grid2 = normalize_grid_ceterized(grid2)
             mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
