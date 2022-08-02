@@ -170,11 +170,12 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     # [1, 7, 7]
     x_array = torch.arange(0., float(W), dtype=coord_q.dtype, device=coord_q.device).view(1, 1, -1).repeat(1, H, 1)
     y_array = torch.arange(0., float(H), dtype=coord_q.dtype, device=coord_q.device).view(1, -1, 1).repeat(1, 1, W)
-    # [bs, 1, 1]
+
     q_bins, k_bins, max_bin_diag = calc_diag(coord_q, coord_k, H, W)
     # [bs, 1, 1]
     q_bin_width, q_bin_height = q_bins
     k_bin_width, k_bin_height = k_bins
+
     # [bs, 1, 1]
     q_start_x = coord_q[:, 0].view(-1, 1, 1)
     q_start_y = coord_q[:, 1].view(-1, 1, 1)
@@ -185,11 +186,6 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     #     print("q_start_x:", q_start_x, "q_start_y:", q_start_y)
     #     print("k_bin_width:", k_bin_width, "k_bin_height:", k_bin_height)
     #     print("k_start_x:", k_start_x, "k_start_y:", k_start_y)
-
-    # [bs, 1, 1]
-    q_bin_diag = torch.sqrt(q_bin_width ** 2 + q_bin_height ** 2)
-    k_bin_diag = torch.sqrt(k_bin_width ** 2 + k_bin_height ** 2)
-    max_bin_diag = torch.max(q_bin_diag, k_bin_diag)
 
     # [bs, 7, 7]
     center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
