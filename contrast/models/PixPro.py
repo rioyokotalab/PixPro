@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.distributed import get_world_size
+from torchvision.transforms import functional as trF
 
 from .base import BaseModel
 
@@ -84,8 +85,10 @@ def flowe_loss(q, k, coord_q, coord_k):
     N, C, H, W = q.shape
 
     if isinstance(coord_q, list):
-        coord_q, _ = coord_q
-        coord_k, _ = coord_k
+        coord_q, mask_q = coord_q
+        coord_k, mask_k = coord_k
+        mask = mask_q & mask_k
+        return flow_loss_dataset(q, k, coord_q, coord_k, mask)
 
     # generate center_coord, width, height
     # [1, 7, 7]
@@ -142,25 +145,89 @@ def flowe_loss(q, k, coord_q, coord_k):
     return -2 * loss.mean()
 
 
+def regression_loss_no_calc_grid(q, k, coord_q, coord_k, pos_ratio=0.5):
+    """ q, k: N * C * H * W
+        coord_q, coord_k: N * 2 * H_in * W_in
+    """
+    N, C, H, W = q.shape
+
+    is_calc_diag = isinstance(coord_q, list)
+    if is_calc_diag:
+        square_coord_q, coord_q = coord_q
+        square_coord_k, coord_k = coord_k
+
+    H_in, W_in = coord_q.shape[-2:]
+    if H_in != H or W_in != W:
+        coord_q = trF.resize(coord_q, (H, W))
+        coord_k = trF.resize(coord_k, (H, W))
+
+    # [bs, feat_dim, 49]
+    q = q.view(N, C, -1)
+    k = k.view(N, C, -1)
+
+    coord_q_x = coord_q[:, 0]
+    coord_q_y = coord_q[:, 1]
+    coord_k_x = coord_k[:, 0]
+    coord_k_y = coord_k[:, 1]
+
+    if is_calc_diag:
+        q_bins, k_bins, max_bin_diag = calc_diag(square_coord_q, square_coord_k, H, W)
+        # [bs, 1, 1]
+        q_bin_width, q_bin_height = q_bins
+        k_bin_width, k_bin_height = k_bins
+    else:
+        # calc bin diag
+        bin_width = torch.ones((N, 1, 1)).float()
+        bin_height = torch.ones((N, 1, 1)).float()
+        bin_diag = torch.sqrt(bin_width ** 2 + bin_height ** 2)
+        max_bin_diag = bin_diag.to(coord_q.device)
+
+    # calc exclude mask
+    coord_q_mask_x = torch.abs(coord_q_x) < 1
+    coord_q_mask_y = torch.abs(coord_q_y) < 1
+    coord_k_mask_x = torch.abs(coord_k_x) < 1
+    coord_k_mask_y = torch.abs(coord_k_y) < 1
+
+    exclud_mask_x = coord_q_mask_x.view(-1, H * W, 1) * coord_k_mask_x.view(-1, 1, H * W)
+    exclud_mask_y = coord_q_mask_y.view(-1, H * W, 1) * coord_k_mask_y.view(-1, 1, H * W)
+    exclud_mask = exclud_mask_x & exclud_mask_y
+
+    # calc dist grids
+    dist_coord = torch.sqrt((coord_q_x.view(-1, H * W, 1) - coord_k_x.view(-1, 1, H * W)) ** 2
+                            + (coord_q_y.view(-1, H * W, 1) - coord_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
+
+    # calc pos mask, exclud_mask
+    pos_mask_bool = dist_coord < pos_ratio
+    pos_mask = pos_mask_bool & exclud_mask
+
+    pos_mask = pos_mask.float().detach()
+
+    logit = torch.bmm(q.transpose(1, 2), k)
+
+    loss = (logit * pos_mask).sum(-1).sum(-1) / (pos_mask.sum(-1).sum(-1) + 1e-6)
+
+    return -2 * loss.mean()
+
+
 def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_loss=False):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
-    if isinstance(coord_q, list):
-        return flow_loss_dataset(q, k, coord_q, coord_k)
+    N, C, H, W = q.shape
     if same_loss:
         return regression_loss_same(q, k)
 
-    N, C, H, W = q.shape
     if is_flowe:
         # max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         # pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
         return flowe_loss(q, k, coord_q, coord_k)
 
-    if isinstance(coord_q, list):
-        coord_q, mask = coord_q
-        coord_k, mask = coord_k
-        mask = mask & mask
+    is_no_calc_grid = isinstance(coord_q, list)
+    if not is_no_calc_grid:
+        ndim = coord_q.ndim
+        is_no_calc_grid = ndim > 2
+    if is_no_calc_grid:
+        return regression_loss_no_calc_grid(q, k, coord_q, coord_k, pos_ratio)
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
