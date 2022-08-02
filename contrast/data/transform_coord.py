@@ -12,7 +12,6 @@ import warnings
 
 from typing import List, Tuple, Union
 
-# import torch
 from torchvision.transforms import functional as F
 import torch.nn.functional as nnF
 
@@ -163,23 +162,27 @@ class Compose(object):
 
         # official coord
         grids, coord = coord
-        # calc_coord = get_coord(coord_size, coord)
+        # calc_coord = get_coord(grid_size, coord, self.is_corner)
         if self.two_crop:
             grids2, coord2 = coord2
-            # calc_coord2 = get_coord(coord_size, coord2)
+            # calc_coord2 = get_coord(grid_size, coord2, self.is_corner)
 
         # my coord
         grid, mycoord = grids
         mycoord = normalize_grid_ceterized(mycoord)
+        # mycoord = F.resize(mycoord, self.crop_size)
         grid = normalize_grid_ceterized(grid)
         # mask = (torch.abs(mycoord[0]) < 1) & (torch.abs(mycoord[1]) < 1)
+        coord = [coord, grid.clone()]
         # coord = mycoord.clone()
         if self.two_crop:
             grid2, mycoord2 = grids2
             mycoord2 = normalize_grid_ceterized(mycoord2)
+            # mycoord2 = F.resize(mycoord2, self.crop_size)
             grid2 = normalize_grid_ceterized(grid2)
             # mask2 = (torch.abs(mycoord2[0]) < 1) & (torch.abs(mycoord2[1]) < 1)
             # mask = mask & mask2
+            coord2 = [coord2, grid2.clone()]
             # coord2 = mycoord2.clone()
 
         # if torch.distributed.get_rank() == 0:
