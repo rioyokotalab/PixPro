@@ -67,12 +67,13 @@ def regression_loss_same(q, k):
 
     return -2 * loss.mean()
 
+
 def flow_loss_dataset(q, k, coord_q, coord_k, mask):
     q_valid = F.grid_sample(q, coord_q.permute(0, 2, 3, 1),
-                             align_corners=True).permute(0, 2, 3, 1)[mask]
+                            align_corners=True).permute(0, 2, 3, 1)[mask]
     k_valid = F.grid_sample(k, coord_k.permute(0, 2, 3, 1),
-                             align_corners=True).permute(0, 2, 3, 1)[mask]
-    loss = F.cosine_similarity(q_valid, k_valid, -1, eps=1e-6) 
+                            align_corners=True).permute(0, 2, 3, 1)[mask]
+    loss = F.cosine_similarity(q_valid, k_valid, -1, eps=1e-6)
     return loss.mean()
 
 
@@ -170,10 +171,10 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     x_array = torch.arange(0., float(W), dtype=coord_q.dtype, device=coord_q.device).view(1, 1, -1).repeat(1, H, 1)
     y_array = torch.arange(0., float(H), dtype=coord_q.dtype, device=coord_q.device).view(1, -1, 1).repeat(1, 1, W)
     # [bs, 1, 1]
-    q_bin_width = ((coord_q[:, 2] - coord_q[:, 0]) / W).view(-1, 1, 1)
-    q_bin_height = ((coord_q[:, 3] - coord_q[:, 1]) / H).view(-1, 1, 1)
-    k_bin_width = ((coord_k[:, 2] - coord_k[:, 0]) / W).view(-1, 1, 1)
-    k_bin_height = ((coord_k[:, 3] - coord_k[:, 1]) / H).view(-1, 1, 1)
+    q_bins, k_bins, max_bin_diag = calc_diag(coord_q, coord_k, H, W)
+    # [bs, 1, 1]
+    q_bin_width, q_bin_height = q_bins
+    k_bin_width, k_bin_height = k_bins
     # [bs, 1, 1]
     q_start_x = coord_q[:, 0].view(-1, 1, 1)
     q_start_y = coord_q[:, 1].view(-1, 1, 1)
@@ -212,6 +213,21 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     return -2 * loss.mean()
 
 
+def calc_diag(coord_q, coord_k, H, W):
+    # [bs, 1, 1]
+    q_bin_width = ((coord_q[:, 2] - coord_q[:, 0]) / W).view(-1, 1, 1)
+    q_bin_height = ((coord_q[:, 3] - coord_q[:, 1]) / H).view(-1, 1, 1)
+    k_bin_width = ((coord_k[:, 2] - coord_k[:, 0]) / W).view(-1, 1, 1)
+    k_bin_height = ((coord_k[:, 3] - coord_k[:, 1]) / H).view(-1, 1, 1)
+
+    # [bs, 1, 1]
+    q_bin_diag = torch.sqrt(q_bin_width ** 2 + q_bin_height ** 2)
+    k_bin_diag = torch.sqrt(k_bin_width ** 2 + k_bin_height ** 2)
+    max_bin_diag = torch.max(q_bin_diag, k_bin_diag)
+
+    return [q_bin_width, q_bin_height], [k_bin_width, k_bin_height], max_bin_diag
+
+
 def Proj_Head(in_dim=2048, inner_dim=4096, out_dim=256):
     return MLP2d(in_dim, inner_dim, out_dim)
 
@@ -234,11 +250,9 @@ class PixPro(BaseModel):
         self.pixpro_no_headsim      = args.pixpro_no_headsim
         self.flowe_loss             = args.flowe_loss
 
-
         self.same_loss = False
         # if self.flowe_loss and args.aug in ["mySimCLR", "myBYOL"]:
         #     self.same_loss = True
-
 
         # create the encoder
         self.encoder = base_encoder(head_type='early_return')

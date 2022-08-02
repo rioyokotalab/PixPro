@@ -188,7 +188,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             logger.info(
                 f'Train: [{epoch}/{args.epochs}][{idx}/{train_len}]  '
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
-                f'lr {lr:.3f}  loss_plus {loss_plus:.3f}'
+                f'lr {lr:.3f}  loss_plus {loss_plus:.3f}  '
                 f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f})')
 
             # tensorboard logger
