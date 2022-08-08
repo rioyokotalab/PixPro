@@ -10,6 +10,10 @@ from torch.nn.parallel import DistributedDataParallel
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.tensorboard import SummaryWriter
 
+import wandb
+
+from contrast.logger import init_wandb
+
 from contrast import models
 from contrast import resnet
 from contrast.data import get_loader
@@ -192,6 +196,14 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar('lr', lr, step)
                 summary_writer.add_scalar('loss', loss_meter.val, step)
 
+        if dist.get_rank() == 0:
+            global_step = (epoch - 1) * train_len + idx
+            loss_plus = loss_meter.val + 4.0
+            wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
+                       "loss/plus": loss_plus, "epoch": epoch - 1,
+                       "global_step": global_step, "time": batch_time.val,
+                       "time/avg": batch_time.avg})
+
 
 def main_prog(opt):
     # setup logger
@@ -203,6 +215,8 @@ def main_prog(opt):
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
         logger.info("Full config saved to {}".format(path))
+        init_wandb(opt)
+        wandb.save(path, base_path=opt.output_dir)
 
     # print args
     logger.info(

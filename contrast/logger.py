@@ -5,6 +5,8 @@ import os
 import sys
 from termcolor import colored
 
+import wandb
+
 
 class _ColorfulFormatter(logging.Formatter):
     def __init__(self, *args, **kwargs):
@@ -92,3 +94,27 @@ def setup_logger(
 @functools.lru_cache(maxsize=None)
 def _cached_log_stream(filename):
     return open(filename, "a")
+
+
+# for wandb log
+def get_wandb_name(args):
+    wandb_name = "pretrain_"
+    wandb_name += f"crop-{args.crop}_"
+    wandb_name += f"aug-{args.aug}_"
+    wandb_name += f"{args.dataset}_"
+    wandb_name += f"image-size-{args.image_size}_"
+    wandb_name += f"l-bn-{args.batch_size}_"
+    wandb_name += f"epoch-{args.epochs}_"
+    wandb_name = wandb_name.rstrip("_")
+    return wandb_name
+
+
+def init_wandb(args):
+    wandb_name = get_wandb_name(args)
+    wandb.init(project="PixPro", entity="tomo", name=wandb_name)
+    wandb.config.update(args)
+    for f in os.listdir(args.output_dir):
+        is_file = os.path.isfile(f)
+        is_git_file = is_file and "git" in f
+        if is_git_file:
+            wandb.save(f, base_path=args.output_dir)
