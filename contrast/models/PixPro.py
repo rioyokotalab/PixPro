@@ -206,11 +206,12 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     init_grid = torch.stack(init_grid[::-1], dim=0).repeat(N, 1, 1, 1)
     init_grid = init_grid.float().to(flow_fwd.device)
     flow_fwd_grid = init_grid + flow_fwd
-    flow_fwd_grid = F.grid_sample(flow_fwd_grid, k_grid.permute(0, 2, 3, 1))
+    flow_fwd_grid = F.grid_sample(flow_fwd_grid, k_grid.permute(0, 2, 3, 1),
+                                  align_corners=True)
     center_k_x = 2 * flow_fwd_grid[:, 0] / (W_in - 1) - 1
     center_k_y = 2 * flow_fwd_grid[:, 1] / (H_in - 1) - 1
 
-    # flow_fwd_grid = F.grid_sample(flow_fwd, k_grid)
+    # flow_fwd_grid = F.grid_sample(flow_fwd, k_grid, align_corners=True)
     # center_k_x = center_k_x + flow_fwd_grid[:, 0]
     # center_k_y = center_k_y + flow_fwd_grid[:, 1]
 
