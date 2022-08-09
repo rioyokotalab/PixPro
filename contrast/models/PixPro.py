@@ -146,21 +146,20 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
-    if isinstance(coord_q, list):
-        return flow_loss_dataset(q, k, coord_q, coord_k)
+    N, C, H, W = q.shape
     if same_loss:
         return regression_loss_same(q, k)
 
-    N, C, H, W = q.shape
     if is_flowe:
+        if isinstance(coord_q, list):
+            return flow_loss_dataset(q, k, coord_q, coord_k)
         # max_norm_diag = (1 / H) ** 2 + (1 / W) ** 2
         # pos_ratio = torch.sqrt(torch.tensor(max_norm_diag)) / 2
         return flowe_loss(q, k, coord_q, coord_k)
 
     if isinstance(coord_q, list):
-        coord_q, mask = coord_q
-        coord_k, mask = coord_k
-        mask = mask & mask
+        coord_q, flow_fwd = coord_q
+        coord_k, flow_bwd = coord_k
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
@@ -188,10 +187,32 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5, is_flowe=False, same_
     #     print("k_start_x:", k_start_x, "k_start_y:", k_start_y)
 
     # [bs, 7, 7]
-    center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
-    center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
-    center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
-    center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
+    # center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
+    # center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
+    # center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
+    # center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
+    center_q_x = x_array * q_bin_width + q_start_x
+    center_q_y = y_array * q_bin_height + q_start_y
+    center_q_x = 2 * center_q_x - 1
+    center_q_y = 2 * center_q_y - 1
+    k_x = x_array * k_bin_width + k_start_x
+    k_y = y_array * k_bin_height + k_start_y
+    k_x = 2 * k_x - 1
+    k_y = 2 * k_y - 1
+    k_grid = torch.stack([k_x, k_y]).permute(1, 0, 2, 3)
+
+    H_in, W_in = flow_fwd.shape[-2:]
+    init_grid = torch.meshgrid(torch.arange(H_in), torch.arange(W_in))
+    init_grid = torch.stack(init_grid[::-1], dim=0).repeat(N, 1, 1, 1)
+    init_grid = init_grid.float().to(flow_fwd.device)
+    flow_fwd_grid = init_grid + flow_fwd
+    flow_fwd_grid = F.grid_sample(flow_fwd_grid, k_grid.permute(0, 2, 3, 1))
+    center_k_x = 2 * flow_fwd_grid[:, 0] / (W_in - 1) - 1
+    center_k_y = 2 * flow_fwd_grid[:, 1] / (H_in - 1) - 1
+
+    # flow_fwd_grid = F.grid_sample(flow_fwd, k_grid)
+    # center_k_x = center_k_x + flow_fwd_grid[:, 0]
+    # center_k_y = center_k_y + flow_fwd_grid[:, 1]
 
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2

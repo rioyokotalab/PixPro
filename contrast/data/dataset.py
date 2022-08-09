@@ -5,6 +5,8 @@ import time
 import random
 import warnings
 
+import numpy as np
+import torch
 import torch.distributed as dist
 import torch.utils.data as data
 from PIL import Image
@@ -292,6 +294,11 @@ def default_imgs_loader(path_list):
     return sample
 
 
+def load_img_for_raft(img: Image):
+    img = np.array(img).astype(np.uint8)
+    img = torch.from_numpy(img).permute(2, 0, 1).float()
+    return img
+
 
 class ImageFolder(DatasetFolder):
     """A generic data loader where the images are arranged in this way: ::
@@ -357,15 +364,16 @@ class ImageFolder(DatasetFolder):
         if self.two_crop and isinstance(img, tuple):
             img, img2 = img
 
+        orig_imgs = [load_img_for_raft(image) for image in images]
         if self.return_coord:
             assert isinstance(img, tuple)
             img, coord = img
 
             if self.two_crop:
                 img2, coord2 = img2
-                return img, img2, coord, coord2, index, target
+                return img, img2, coord, coord2, index, target, orig_imgs[0], orig_imgs[-1]
             else:
-                return img, coord, index, target
+                return img, coord, index, target, orig_imgs[0], orig_imgs[-1]
         else:
             if isinstance(img, tuple):
                 img, coord = img
@@ -373,6 +381,6 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
-                return img, img2, index, target
+                return img, img2, index, target, orig_imgs[0], orig_imgs[-1]
             else:
-                return img, index, target
+                return img, index, target, orig_imgs[0], orig_imgs[-1]
