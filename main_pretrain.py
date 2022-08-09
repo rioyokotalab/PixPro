@@ -169,6 +169,8 @@ def main(args):
 
     if args.use_flow:
         model = [model, flow_model]
+    else:
+        model = [model]
 
     for epoch in range(args.start_epoch, args.epochs + 1):
         if isinstance(train_loader.sampler, DistributedSampler):
@@ -177,7 +179,7 @@ def main(args):
         train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer)
 
         if dist.get_rank() == 0 and (epoch % args.save_freq == 0 or epoch == args.epochs):
-            save_checkpoint(args, epoch, model, optimizer, scheduler, sampler=train_loader.sampler)
+            save_checkpoint(args, epoch, model[0], optimizer, scheduler, sampler=train_loader.sampler)
 
         if epoch >= args.debug_epochs:
             break
@@ -187,10 +189,11 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     """
     one epoch training
     """
-    use_flow = isinstance(model, list)
-    if use_flow:
+    if args.use_flow:
         model, flow_model = model
         flow_model.eval()
+    else:
+        model = model[0]
     model.train()
 
     batch_time = AverageMeter()
