@@ -1,4 +1,5 @@
 import argparse
+import os
 
 from contrast import resnet
 from contrast.util import MyHelpFormatter
@@ -23,6 +24,10 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--image-size', type=int, default=224, help='image crop size')
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
     parser.add_argument('--n-frames', type=int, default=1, help='num of frames to load if dataset is video')
+
+    # RAFT
+    parser.add_argument('--use_flow', action='store_true')
+    parser.add_argument('--flow_model', default="./models/raft-small.pth", help=r"raft model path")
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')
@@ -86,5 +91,11 @@ def parse_option(stage='pre-train'):
         parser.add_argument('--pixpro-transform-layer', type=int, default=0)
 
     args = parser.parse_args()
+
+    if args.flow_model != "":
+        base_name = os.path.basename(args.flow_model)
+        if "small" in base_name:
+            args.small = True
+        args.mixed_precision = False
 
     return args
