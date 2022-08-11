@@ -23,6 +23,8 @@ from contrast.option import parse_option
 from contrast.util import AverageMeter
 from contrast.lars import add_weight_decay, LARS
 
+from contrast.flow import RAFT, InputPadder
+
 try:
     # noinspection PyUnresolvedReferences
     from apex import amp
@@ -30,9 +32,32 @@ except ImportError:
     amp = None
 
 
+@torch.no_grad()
+def calc_optical_flow(orig_im1, orig_im2, flow_model):
+    flow_model.eval()
+    padder = InputPadder(orig_im1.shape)
+    padder.pad(orig_im1, orig_im2)
+    flow_fwd, _ = flow_model(orig_im1, orig_im2, test_mode=True)
+    flow_bwd, _ = flow_model(orig_im2, orig_im1, test_mode=True)
+    flow_fwd = flow_fwd.cuda()
+    flow_bwd = flow_bwd.cuda()
+    return flow_fwd, flow_bwd
+
+
 def build_model(args):
     encoder = resnet.__dict__[args.arch]
     model = models.__dict__[args.model](encoder, args).cuda()
+
+    if args.use_flow:
+        flow_model = torch.nn.DataParallel(RAFT(args))
+        weights = torch.load(args.flow_model, map_location="cpu")
+        flow_model.load_state_dict(weights)
+        flow_model = flow_model.module.cuda()
+        flow_model = DistributedDataParallel(flow_model, device_ids=[args.local_rank],
+                                             broadcast_buffers=False)
+        flow_model.eval()
+        for param in flow_model.parameters():
+            param.requires_grad = False
 
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(
@@ -54,6 +79,9 @@ def build_model(args):
         model, optimizer = amp.initialize(model, optimizer, opt_level=args.amp_opt_level)
 
     model = DistributedDataParallel(model, device_ids=[args.local_rank], broadcast_buffers=False)
+
+    if args.use_flow:
+        model = [model, flow_model]
 
     return model, optimizer
 
@@ -116,6 +144,9 @@ def main(args):
     model, optimizer = build_model(args)
     scheduler = get_scheduler(optimizer, len(train_loader), args)
 
+    if args.use_flow:
+        model, flow_model = model
+
     # optionally resume from a checkpoint
     if args.pretrained_model:
         assert os.path.isfile(args.pretrained_model)
@@ -137,6 +168,9 @@ def main(args):
     else:
         summary_writer = None
 
+    if args.use_flow:
+        model = [model, flow_model]
+
     for epoch in range(args.start_epoch, args.epochs + 1):
         if isinstance(train_loader.sampler, DistributedSampler):
             train_loader.sampler.set_epoch(epoch)
@@ -154,6 +188,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     """
     one epoch training
     """
+    use_flow = isinstance(model, list)
+    if use_flow:
+        model, flow_model = model
+        flow_model.eval()
     model.train()
 
     batch_time = AverageMeter()
@@ -162,6 +200,34 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     end = time.time()
     for idx, data in enumerate(train_loader):
         data = [item.cuda(non_blocking=True) for item in data]
+
+        with torch.no_grad():
+            orig_im1, orig_im2 = data[6], data[7]
+            bs = orig_im1.shape[0]
+            # to reduce memory usage
+            flow_fwds, flow_bwds = [], []
+            for i in range(0, bs, 2):
+                if i + 2 > bs:
+                    break
+                l_orig_im1 = orig_im1[i:i+2]
+                l_orig_im2 = orig_im2[i:i+2]
+                flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
+                                                       flow_model)
+                flow_fwds.append(flow_fwd)
+                flow_bwds.append(flow_bwd)
+            flow_fwd = torch.cat(flow_fwds, dim=0)
+            flow_bwd = torch.cat(flow_bwds, dim=0)
+            if bs % 2 != 0:
+                l_flow_fwd, l_flow_bwd = calc_optical_flow(orig_im1[-1], orig_im2[-1],
+                                                           flow_model)
+                flow_fwd = torch.cat([flow_fwd, l_flow_bwd], dim=0)
+                flow_bwd = torch.cat([flow_bwd, l_flow_bwd], dim=0)
+            # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
+            flow_fwd = flow_fwd.cuda()
+            flow_bwd = flow_bwd.cuda()
+
+            data[2] = [data[2], flow_fwd]
+            data[3] = [data[3], flow_bwd]
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss = model(data[0], data[1], data[2], data[3])
