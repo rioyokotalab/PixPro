@@ -41,6 +41,27 @@ class MLP2d(nn.Module):
         return x
 
 
+def add_optical_flow(flow, grid, size):
+    flow_grid = F.grid_sample(flow, grid.permute(0, 2, 3, 1), align_corners=True)
+    H_in, W_in = flow.shape[-2:]
+    if isinstance(size, torch.Tensor):
+        H_orig, W_orig = size[0].item(), size[1].item()
+    else:
+        H_orig, W_orig = size
+    ratio_h, ratio_w = 1, 1
+    if H_in != H_orig or W_in != W_orig:
+        ratio_h, ratio_w = H_in / H_orig, W_in / W_orig
+
+    out_grid = grid.clone()
+    x = out_grid[:, 0].cuda()
+    y = out_grid[:, 1].cuda()
+    out_x = (x / 2 + 1) * (W_orig - 1) * ratio_w + flow_grid[:, 0]
+    out_y = (y / 2 + 1) * (H_orig - 1) * ratio_h + flow_grid[:, 1]
+    out_x = 2 * (out_x / (W_orig - 1)) - 1
+    out_y = 2 * (out_y / (H_orig - 1)) - 1
+    return out_x, out_y
+
+
 def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
@@ -50,6 +71,9 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     if isinstance(coord_q, list):
         coord_q, flow_fwd = coord_q
         coord_k, flow_bwd = coord_k
+        if isinstance(flow_fwd, list):
+            flow_fwd, size = flow_fwd
+            flow_bwd, _ = flow_bwd
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
@@ -76,32 +100,34 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     max_bin_diag = torch.max(q_bin_diag, k_bin_diag)
 
     # [bs, 7, 7]
-    center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
-    center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
-    center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
-    center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
-    center_q_x = x_array * q_bin_width + q_start_x
-    center_q_y = y_array * q_bin_height + q_start_y
-    center_q_x = 2 * center_q_x - 1
-    center_q_y = 2 * center_q_y - 1
+    # center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
+    # center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
+    # center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
+    # center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
+    q_x = x_array * q_bin_width + q_start_x
+    q_y = y_array * q_bin_height + q_start_y
+    q_x = 2 * q_x - 1
+    q_y = 2 * q_y - 1
+    q_grid = torch.stack([q_x, q_y]).permute(1, 0, 2, 3)
     k_x = x_array * k_bin_width + k_start_x
     k_y = y_array * k_bin_height + k_start_y
     k_x = 2 * k_x - 1
     k_y = 2 * k_y - 1
-    k_grid = torch.stack([k_x, k_y]).permute(1, 0, 2, 3)
+    # k_grid = torch.stack([k_x, k_y]).permute(1, 0, 2, 3)
 
-    H_in, W_in = flow_fwd.shape[-2:]
-    init_grid = torch.meshgrid(torch.arange(H_in), torch.arange(W_in))
-    init_grid = torch.stack(init_grid[::-1], dim=0).repeat(N, 1, 1, 1)
-    init_grid = init_grid.float().to(flow_fwd.device)
-    flow_fwd_grid = init_grid + flow_fwd
-    flow_fwd_grid = F.grid_sample(flow_fwd_grid, k_grid.permute(0, 2, 3, 1))
-    center_k_x = 2 * flow_fwd_grid[:, 0] / (W_in - 1) - 1
-    center_k_y = 2 * flow_fwd_grid[:, 1] / (H_in - 1) - 1
+    # H_in, W_in = flow_fwd.shape[-2:]
+    # init_grid = torch.meshgrid(torch.arange(H_in), torch.arange(W_in))
+    # init_grid = torch.stack(init_grid[::-1], dim=0).repeat(N, 1, 1, 1)
+    # init_grid = init_grid.float().to(flow_fwd.device)
+    # flow_fwd_grid = init_grid + flow_fwd
+    # flow_fwd_grid = F.grid_sample(flow_fwd_grid, k_grid.permute(0, 2, 3, 1))
+    # center_k_x = 2 * flow_fwd_grid[:, 0] / (W_in - 1) - 1
+    # center_k_y = 2 * flow_fwd_grid[:, 1] / (H_in - 1) - 1
 
-    # flow_fwd_grid = F.grid_sample(flow_fwd, k_grid)
-    # center_k_x = center_k_x + flow_fwd_grid[:, 0]
-    # center_k_y = center_k_y + flow_fwd_grid[:, 1]
+    center_q_x, center_q_y = add_optical_flow(flow_fwd, q_grid, size)
+    center_k_x, center_k_y = k_x.clone(), k_y.clone()
+    # center_q_x, center_q_y = q_x.clone(), q_y.clone()
+    # center_k_x, center_k_y = add_optical_flow(flow_fwd, k_grid, size)
 
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2

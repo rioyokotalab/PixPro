@@ -33,12 +33,17 @@ except ImportError:
 
 
 @torch.no_grad()
-def calc_optical_flow(orig_im1, orig_im2, flow_model):
+def calc_optical_flow(orig_im1, orig_im2, flow_model, up=False):
     flow_model.eval()
     padder = InputPadder(orig_im1.shape)
     padder.pad(orig_im1, orig_im2)
-    flow_fwd, _ = flow_model(orig_im1, orig_im2, test_mode=True)
-    flow_bwd, _ = flow_model(orig_im2, orig_im1, test_mode=True)
+    flow_fwd, flow_fwd_up = flow_model(orig_im1, orig_im2, test_mode=True)
+    flow_bwd, flow_bwd_up = flow_model(orig_im2, orig_im1, test_mode=True)
+    if up:
+        flow_fwd_up = flow_fwd_up.cuda()
+        flow_bwd_up = flow_bwd_up.cuda()
+        return flow_fwd_up, flow_bwd_up
+
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
     return flow_fwd, flow_bwd
@@ -206,6 +211,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
         with torch.no_grad():
             orig_im1, orig_im2 = data[6], data[7]
+            size = torch.tensor(orig_im1.shape[-2:]).cuda()
             bs = orig_im1.shape[0]
             # to reduce memory usage
             flow_fwds, flow_bwds = [], []
@@ -215,7 +221,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 l_orig_im1 = orig_im1[i:i+2]
                 l_orig_im2 = orig_im2[i:i+2]
                 flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                                       flow_model)
+                                                       flow_model, up=args.flow_up)
                 flow_fwds.append(flow_fwd)
                 flow_bwds.append(flow_bwd)
             flow_fwd = torch.cat(flow_fwds, dim=0)
@@ -228,6 +234,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
             flow_fwd = flow_fwd.cuda()
             flow_bwd = flow_bwd.cuda()
+            flow_fwd = [flow_fwd, size]
+            flow_bwd = [flow_bwd, size]
 
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]

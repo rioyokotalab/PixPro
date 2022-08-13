@@ -28,6 +28,7 @@ def parse_option(stage='pre-train'):
     # RAFT
     parser.add_argument('--use_flow', action='store_true')
     parser.add_argument('--flow_model', default="./models/raft-small.pth", help=r"raft model path")
+    parser.add_argument('--flow_up', action='store_true')
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')
