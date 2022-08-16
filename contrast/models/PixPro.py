@@ -123,6 +123,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # flow_fwd_grid = F.grid_sample(flow_fwd_grid, k_grid.permute(0, 2, 3, 1))
     # center_k_x = 2 * flow_fwd_grid[:, 0] / (W_in - 1) - 1
     # center_k_y = 2 * flow_fwd_grid[:, 1] / (H_in - 1) - 1
+    # center_q_x, center_q_y = q_x.clone(), q_y.clone()
 
     center_q_x, center_q_y = add_optical_flow(flow_fwd, q_grid, size)
     center_k_x, center_k_y = k_x.clone(), k_y.clone()
