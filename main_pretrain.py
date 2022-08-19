@@ -23,7 +23,8 @@ from contrast.option import parse_option
 from contrast.util import AverageMeter
 from contrast.lars import add_weight_decay, LARS
 
-from contrast.flow import RAFT, InputPadder
+from contrast.flow import RAFT
+# from contrast.flow import InputPadder
 
 try:
     # noinspection PyUnresolvedReferences
@@ -33,19 +34,29 @@ except ImportError:
 
 
 @torch.no_grad()
-def calc_optical_flow(orig_im1, orig_im2, flow_model, up=False):
+def calc_optical_flow(orig_im1_src, orig_im2_src, flow_model, up=False, verbose=False):
+    imgs = [orig_im1_src.clone(), orig_im2_src.clone()]
+    if verbose:
+        orig_im1, orig_im2 = imgs[0].clone(), imgs[-1].clone()
+    i = 1 if up else 0
     flow_model.eval()
-    padder = InputPadder(orig_im1.shape)
-    padder.pad(orig_im1, orig_im2)
-    flow_fwd, flow_fwd_up = flow_model(orig_im1, orig_im2, test_mode=True)
-    flow_bwd, flow_bwd_up = flow_model(orig_im2, orig_im1, test_mode=True)
-    if up:
-        flow_fwd_up = flow_fwd_up.cuda()
-        flow_bwd_up = flow_bwd_up.cuda()
-        return flow_fwd_up, flow_bwd_up
-
-    flow_fwd = flow_fwd.cuda()
-    flow_bwd = flow_bwd.cuda()
+    flow_fwds = torch.stack([
+        flow_model(img0, img1, upsample=False, test_mode=True)[i]
+        for img0, img1 in zip(imgs[:-1], imgs[1:])
+    ])
+    flow_bwds = torch.stack([
+        flow_model(img0, img1, upsample=False, test_mode=True)[i]
+        for img0, img1 in zip(imgs[1:][::-1], imgs[:-1][::-1])
+    ])
+    flow_fwd = flow_fwds[0].cuda()
+    flow_bwd = flow_bwds[0].cuda()
+    if verbose:
+        rank = dist.get_rank()
+        print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
+        print(f"rank: {rank} orig_im1: {orig_im1.shape}", orig_im1.tolist())
+        print(f"rank: {rank} orig_im2: {orig_im2.shape}", orig_im2.tolist())
+        print(f"rank: {rank} flow_fwd: {flow_fwd.shape}", flow_fwd.tolist())
+        print(f"rank: {rank} flow_bwd: {flow_bwd.shape}", flow_bwd.tolist())
     return flow_fwd, flow_bwd
 
 
@@ -215,7 +226,15 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             bs = orig_im1.shape[0]
             # to reduce memory usage
             flow_fwds, flow_bwds = [], []
-            for i in range(0, bs, 2):
+            s_index = 0 if bs % 2 == 0 else 1
+            if bs % 2 != 0:
+                l_orig_im1 = orig_im1[0:1]
+                l_orig_im2 = orig_im2[0:1]
+                flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
+                                                       flow_model, up=args.flow_up)
+                flow_fwds.append(flow_fwd)
+                flow_bwds.append(flow_bwd)
+            for i in range(s_index, bs, 2):
                 if i + 2 > bs:
                     break
                 l_orig_im1 = orig_im1[i:i+2]
@@ -226,11 +245,6 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 flow_bwds.append(flow_bwd)
             flow_fwd = torch.cat(flow_fwds, dim=0)
             flow_bwd = torch.cat(flow_bwds, dim=0)
-            if bs % 2 != 0:
-                l_flow_fwd, l_flow_bwd = calc_optical_flow(orig_im1[-1], orig_im2[-1],
-                                                           flow_model)
-                flow_fwd = torch.cat([flow_fwd, l_flow_bwd], dim=0)
-                flow_bwd = torch.cat([flow_bwd, l_flow_bwd], dim=0)
             # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
             flow_fwd = flow_fwd.cuda()
             flow_bwd = flow_bwd.cuda()
