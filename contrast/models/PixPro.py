@@ -41,24 +41,52 @@ class MLP2d(nn.Module):
         return x
 
 
-def add_optical_flow(flow, grid, size):
-    flow_grid = F.grid_sample(flow, grid.permute(0, 2, 3, 1), align_corners=True)
+def add_optical_flow(flow, x_grid, y_grid, bin_w, bin_h, crop_w, crop_h, s_x, s_y, size,
+                     verbose=False):
+    H, W = x_grid.shape[-2:]
     H_in, W_in = flow.shape[-2:]
-    if isinstance(size, torch.Tensor):
-        H_orig, W_orig = size[0].item(), size[1].item()
-    else:
-        H_orig, W_orig = size
-    ratio_h, ratio_w = 1, 1
+    H_orig, W_orig = size
     if H_in != H_orig or W_in != W_orig:
         ratio_h, ratio_w = H_in / H_orig, W_in / W_orig
+    else:
+        ratio_h, ratio_w = 1, 1
+    # get crop size before resize
+    flip_b_w = (bin_w < 0).reshape(-1)
+    flip_b_h = (bin_h < 0).reshape(-1)
+    crop_w = crop_w.to(torch.int)
+    crop_h = crop_h.to(torch.int)
+    s_x = s_x.to(torch.int)
+    s_y = s_y.to(torch.int)
+    if verbose:
+        rank = torch.distributed.get_rank()
+        print(f"rank: {rank} crop size: ({crop_h}, {crop_w})")
+        print(f"rank: {rank} orig size: ({H_orig}, {W_orig})")
+        print(f"rank: {rank} start: ({s_x}, {s_y})")
+        print(f"rank: {rank} cur size: ({H}, {W})")
+        print(f"rank: {rank} flip: ({flip_b_w}, {flip_b_h})")
+
+    x = x_grid.clone()
+    y = y_grid.clone()
+    x = x * W / (crop_w - 1)
+    y = y * H / (crop_h - 1)
+    x[flip_b_w] = -1 * (x[flip_b_w] * (W_orig - 1) - (2 * s_x[flip_b_w] + crop_w[flip_b_w] - 1)) / (W_orig - 1)
+    y[flip_b_h] = -1 * (y[flip_b_h] * (H_orig - 1) - (2 * s_y[flip_b_h] + crop_h[flip_b_h] - 1)) / (H_orig - 1)
+    x = 2 * x - 1
+    y = 2 * y - 1
+    grid = torch.stack([x, y]).permute(1, 0, 2, 3)
+    flow_grid = F.grid_sample(flow, grid.permute(0, 2, 3, 1), align_corners=True)
 
     out_grid = grid.clone()
     x = out_grid[:, 0].cuda()
     y = out_grid[:, 1].cuda()
     out_x = (x / 2 + 1) * (W_orig - 1) * ratio_w + flow_grid[:, 0]
     out_y = (y / 2 + 1) * (H_orig - 1) * ratio_h + flow_grid[:, 1]
-    out_x = 2 * (out_x / (W_orig - 1)) - 1
-    out_y = 2 * (out_y / (H_orig - 1)) - 1
+    out_x = out_x / ratio_w
+    out_y = out_y / ratio_h
+    # out_x = 2 * (out_x / (W_orig - 1)) - 1
+    # out_y = 2 * (out_y / (H_orig - 1)) - 1
+    # out_x = out_x / (W_orig - 1)
+    # out_y = out_y / (H_orig - 1)
     return out_x, out_y
 
 
@@ -74,6 +102,9 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         if isinstance(flow_fwd, list):
             flow_fwd, size = flow_fwd
             flow_bwd, _ = flow_bwd
+            if isinstance(size, torch.Tensor):
+                H_orig, W_orig = int(size[0].item()), int(size[1].item())
+                size = (H_orig, W_orig)
 
     # [bs, feat_dim, 49]
     q = q.view(N, C, -1)
@@ -106,14 +137,10 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
     q_x = x_array * q_bin_width + q_start_x
     q_y = y_array * q_bin_height + q_start_y
-    q_x = 2 * q_x - 1
-    q_y = 2 * q_y - 1
-    q_grid = torch.stack([q_x, q_y]).permute(1, 0, 2, 3)
     k_x = x_array * k_bin_width + k_start_x
     k_y = y_array * k_bin_height + k_start_y
-    k_x = 2 * k_x - 1
-    k_y = 2 * k_y - 1
-    # k_grid = torch.stack([k_x, k_y]).permute(1, 0, 2, 3)
+    # k_x = 2 * k_x - 1
+    # k_y = 2 * k_y - 1
 
     # H_in, W_in = flow_fwd.shape[-2:]
     # init_grid = torch.meshgrid(torch.arange(H_in), torch.arange(W_in))
@@ -125,10 +152,26 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # center_k_y = 2 * flow_fwd_grid[:, 1] / (H_in - 1) - 1
     # center_q_x, center_q_y = q_x.clone(), q_y.clone()
 
-    center_q_x, center_q_y = add_optical_flow(flow_fwd, q_grid, size)
+    q_s_x = coord_q[:, 4].view(-1, 1, 1)
+    q_s_y = coord_q[:, 5].view(-1, 1, 1)
+    q_crop_w = coord_q[:, 6].view(-1, 1, 1)
+    q_crop_h = coord_q[:, 7].view(-1, 1, 1)
+    center_q_x, center_q_y = add_optical_flow(flow_fwd, q_x, q_y, q_bin_width,
+                                              q_bin_height, q_crop_w, q_crop_h, q_s_x,
+                                              q_s_y, size)
+    center_q_x = center_q_x * k_bin_width
+    center_q_y = center_q_y * k_bin_height
     center_k_x, center_k_y = k_x.clone(), k_y.clone()
     # center_q_x, center_q_y = q_x.clone(), q_y.clone()
-    # center_k_x, center_k_y = add_optical_flow(flow_fwd, k_grid, size)
+    # k_s_x = coord_k[:, 4].view(-1, 1, 1)
+    # k_s_y = coord_k[:, 5].view(-1, 1, 1)
+    # k_crop_w = coord_k[:, 6].view(-1, 1, 1)
+    # k_crop_h = coord_k[:, 7].view(-1, 1, 1)
+    # center_k_x, center_k_y = add_optical_flow(flow_fwd, k_x, k_y, k_bin_width,
+    #                                           k_bin_height, k_crop_w, k_crop_h, k_s_x,
+    #                                           k_s_y, size)
+    # center_k_x = center_k_x * q_bin_width
+    # center_k_y = center_k_y * q_bin_height
 
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
