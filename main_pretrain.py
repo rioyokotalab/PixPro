@@ -60,6 +60,40 @@ def calc_optical_flow(orig_im1_src, orig_im2_src, flow_model, up=False, verbose=
     return flow_fwd, flow_bwd
 
 
+@torch.no_grad()
+def apply_optical_flow(data, flow_model, args):
+    orig_im1, orig_im2 = data[6], data[7]
+    size = torch.tensor(orig_im1.shape[-2:]).cuda()
+    bs = orig_im1.shape[0]
+    # to reduce memory usage
+    flow_fwds, flow_bwds = [], []
+    s_index = 0 if bs % 2 == 0 else 1
+    if bs % 2 != 0:
+        l_orig_im1 = orig_im1[0:1]
+        l_orig_im2 = orig_im2[0:1]
+        flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
+                                               flow_model, up=args.flow_up)
+        flow_fwds.append(flow_fwd)
+        flow_bwds.append(flow_bwd)
+    for i in range(s_index, bs, 2):
+        if i + 2 > bs:
+            break
+        l_orig_im1 = orig_im1[i:i+2]
+        l_orig_im2 = orig_im2[i:i+2]
+        flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
+                                               flow_model, up=args.flow_up)
+        flow_fwds.append(flow_fwd)
+        flow_bwds.append(flow_bwd)
+    flow_fwd = torch.cat(flow_fwds, dim=0)
+    flow_bwd = torch.cat(flow_bwds, dim=0)
+    # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
+    flow_fwd = flow_fwd.cuda()
+    flow_bwd = flow_bwd.cuda()
+    flow_fwd = [flow_fwd, size]
+    flow_bwd = [flow_bwd, size]
+    return flow_fwd, flow_bwd
+
+
 def build_model(args):
     encoder = resnet.__dict__[args.arch]
     model = models.__dict__[args.model](encoder, args).cuda()
@@ -220,37 +254,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     for idx, data in enumerate(train_loader):
         data = [item.cuda(non_blocking=True) for item in data]
 
-        with torch.no_grad():
-            orig_im1, orig_im2 = data[6], data[7]
-            size = torch.tensor(orig_im1.shape[-2:]).cuda()
-            bs = orig_im1.shape[0]
-            # to reduce memory usage
-            flow_fwds, flow_bwds = [], []
-            s_index = 0 if bs % 2 == 0 else 1
-            if bs % 2 != 0:
-                l_orig_im1 = orig_im1[0:1]
-                l_orig_im2 = orig_im2[0:1]
-                flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                                       flow_model, up=args.flow_up)
-                flow_fwds.append(flow_fwd)
-                flow_bwds.append(flow_bwd)
-            for i in range(s_index, bs, 2):
-                if i + 2 > bs:
-                    break
-                l_orig_im1 = orig_im1[i:i+2]
-                l_orig_im2 = orig_im2[i:i+2]
-                flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                                       flow_model, up=args.flow_up)
-                flow_fwds.append(flow_fwd)
-                flow_bwds.append(flow_bwd)
-            flow_fwd = torch.cat(flow_fwds, dim=0)
-            flow_bwd = torch.cat(flow_bwds, dim=0)
-            # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
-            flow_fwd = flow_fwd.cuda()
-            flow_bwd = flow_bwd.cuda()
-            flow_fwd = [flow_fwd, size]
-            flow_bwd = [flow_bwd, size]
-
+        if args.use_flow:
+            flow_fwd, flow_bwd = apply_optical_flow(data, flow_model, args)
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]
 
