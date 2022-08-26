@@ -72,7 +72,8 @@ def apply_optical_flow(data, flow_model, args):
         l_orig_im1 = orig_im1[0:1]
         l_orig_im2 = orig_im2[0:1]
         flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                               flow_model, up=args.flow_up)
+                                               flow_model, up=args.flow_up,
+                                               verbose=args.verbose)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     for i in range(s_index, bs, 2):
@@ -81,7 +82,8 @@ def apply_optical_flow(data, flow_model, args):
         l_orig_im1 = orig_im1[i:i+2]
         l_orig_im2 = orig_im2[i:i+2]
         flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                               flow_model, up=args.flow_up)
+                                               flow_model, up=args.flow_up,
+                                               verbose=args.verbose)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     flow_fwd = torch.cat(flow_fwds, dim=0)
@@ -302,6 +304,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
 
 def main_prog(opt):
+    cudnn.benchmark = not opt.no_benchmark
     # setup logger
     os.makedirs(opt.output_dir, exist_ok=True)
     global logger
@@ -330,6 +333,5 @@ if __name__ == '__main__':
 
     torch.cuda.set_device(opt.local_rank)
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
-    cudnn.benchmark = True
 
     main_prog(opt)
