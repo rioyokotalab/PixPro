@@ -41,7 +41,7 @@ class MLP2d(nn.Module):
         return x
 
 
-def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
+def regression_loss(q, k, coord_q, coord_k, weight=1.0, pos_ratio=0.5):
     """ q, k: N * C * H * W
         coord_q, coord_k: N * 4 (x_upper_left, y_upper_left, x_lower_right, y_lower_right)
     """
@@ -79,6 +79,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
                              + (center_q_y.view(-1, H * W, 1) - center_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
+    dist_center = dist_center * weight
     pos_mask = (dist_center < pos_ratio).float().detach()
 
     # [bs, 49, 49]
@@ -108,6 +109,7 @@ class PixPro(BaseModel):
         self.pixpro_clamp_value     = args.pixpro_clamp_value
         self.pixpro_transform_layer = args.pixpro_transform_layer
         self.pixpro_ins_loss_weight = args.pixpro_ins_loss_weight
+        self.pixpro_dist_weight     = args.pixpro_dist_weight
 
         # create the encoder
         self.encoder = base_encoder(head_type='early_return')
@@ -201,6 +203,32 @@ class PixPro(BaseModel):
 
         return feat.view(N, C, H, W)
 
+    def feat_weight(self, feat_q_src, feat_k_src):
+
+        if not self.pixpro_dist_weight:
+            return 1.0
+
+        feat_q = feat_q_src.clone()
+        feat_k = feat_k_src.clone()
+        N, C, H, W = feat_q.shape
+
+        # Similarity calculation
+        feat_q = F.normalize(feat_q, dim=1)
+        feat_k = F.normalize(feat_k, dim=1)
+
+        # [N, C, H * W]
+        feat_q = feat_q.view(N, C, -1)
+        feat_k = feat_k.view(N, C, -1)
+
+        # [N, H * W, H * W]
+        attention = torch.bmm(feat_q.transpose(1, 2), feat_k)
+        attention = torch.clamp(attention, min=self.pixpro_clamp_value)
+        if self.pixpro_p < 1.:
+            attention = attention + 1e-6
+        attention = attention ** self.pixpro_p
+
+        return 1 / attention
+
     def regression_loss(self, x, y):
         return -2. * torch.einsum('nc, nc->n', [x, y]).mean()
 
@@ -215,11 +243,13 @@ class PixPro(BaseModel):
         # compute query features
         feat_1 = self.encoder(im_1)  # queries: NxC
         proj_1 = self.projector(feat_1)
+        proj_1_copy = proj_1.clone()
         pred_1 = self.featprop(proj_1)
         pred_1 = F.normalize(pred_1, dim=1)
 
         feat_2 = self.encoder(im_2)
         proj_2 = self.projector(feat_2)
+        proj_2_copy = proj_2.clone()
         pred_2 = self.featprop(proj_2)
         pred_2 = F.normalize(pred_2, dim=1)
 
@@ -254,8 +284,10 @@ class PixPro(BaseModel):
                                                  dim=1)
 
         # compute loss
-        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio) \
-            + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio)
+        weight_1 = self.feat_weight(proj_1_copy, proj_2_copy)
+        weight_2 = self.feat_weight(proj_2_copy, proj_1_copy)
+        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, weight_1, self.pixpro_pos_ratio) \
+            + regression_loss(pred_2, proj_1_ng, coord2, coord1, weight_2, self.pixpro_pos_ratio)
 
         if self.pixpro_ins_loss_weight > 0.:
             loss_instance = self.regression_loss(pred_instance_1, proj_instance_2_ng) + \
