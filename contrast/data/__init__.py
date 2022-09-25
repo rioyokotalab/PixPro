@@ -10,7 +10,7 @@ from .dataset import ImageFolder
 
 
 def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=False):
-    transform = get_transform(aug_type, args.crop, args.image_size)
+    transform = get_transform(aug_type, args.crop, args.image_size, args.crop_ratio)
 
     # dataset
     if args.zip:

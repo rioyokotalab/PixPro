@@ -14,12 +14,13 @@ class GaussianBlur(object):
         return x
 
 
-def get_transform(aug_type, crop, image_size=224):
+def get_transform(aug_type, crop, image_size=224, ratio=(3. / 4., 4. / 3.)):
+    ratio = tuple(ratio)
     normalize = transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
 
     if aug_type == "InstDisc":  # used in InstDisc and MoCo v1
         transform = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.ColorJitter(0.4, 0.4, 0.4, 0.4),
             transforms.RandomGrayscale(p=0.2),
@@ -28,7 +29,7 @@ def get_transform(aug_type, crop, image_size=224):
         ])
     elif aug_type == 'MoCov2':  # used in MoCov2
         transform = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.4, 0.1)], p=0.8),
             transforms.RandomGrayscale(p=0.2),
@@ -38,7 +39,7 @@ def get_transform(aug_type, crop, image_size=224):
         ])
     elif aug_type == 'SimCLR':  # used in SimCLR and PIC
         transform = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)], p=0.8),
             transforms.RandomGrayscale(p=0.2),
@@ -48,7 +49,7 @@ def get_transform(aug_type, crop, image_size=224):
         ])
     elif aug_type == 'BYOL':
         transform_1 = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
             transforms.RandomGrayscale(p=0.2),
@@ -57,7 +58,7 @@ def get_transform(aug_type, crop, image_size=224):
             normalize,
         ])
         transform_2 = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([transforms.ColorJitter(0.4, 0.4, 0.2, 0.1)], p=0.8),
             transforms.RandomGrayscale(p=0.2),
@@ -74,7 +75,7 @@ def get_transform(aug_type, crop, image_size=224):
             img_mean=tuple([min(255, round(255 * x)) for x in rgb_mean]),
         )
         transform = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.RandomApply([
                 transforms.ColorJitter(0.8, 0.8, 0.8, 0.2)
@@ -87,7 +88,7 @@ def get_transform(aug_type, crop, image_size=224):
         ])
     elif aug_type == 'NULL':  # used in linear evaluation
         transform = transform_coord.Compose([
-            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.)),
+            transform_coord.RandomResizedCropCoord(image_size, scale=(crop, 1.), ratio=ratio),
             transform_coord.RandomHorizontalFlipCoord(),
             transforms.ToTensor(),
             normalize,

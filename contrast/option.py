@@ -13,6 +13,7 @@ def parse_option(stage='pre-train'):
     # dataset
     parser.add_argument('--data-dir', type=str, default='./data', help='dataset director')
     parser.add_argument('--crop', type=float, default=0.2 if stage == 'pre-train' else 0.08, help='minimum crop')
+    parser.add_argument('--crop-ratio', nargs=2, type=float, default=[3. / 4., 4. / 3.], help='ratio of crop')
     parser.add_argument('--aug', type=str, default='NULL',
                         choices=['NULL', 'InstDisc', 'MoCov2', 'SimCLR', 'RandAug', 'BYOL', 'val'],
                         help='which augmentation to use.')
@@ -21,7 +22,7 @@ def parse_option(stage='pre-train'):
                         help='cache mode: no for no cache, full for cache all data, part for only cache part of data')
     parser.add_argument('--dataset', type=str, default='ImageNet', choices=['ImageNet', "bdd100k"], help='dataset type')
     parser.add_argument('--ann-file', type=str, default='', help='annotation file')
-    parser.add_argument('--image-size', type=int, default=224, help='image crop size')
+    parser.add_argument('--image-size', nargs=2, type=int, default=[224, 224], help='image crop size')
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
     parser.add_argument('--n-frames', type=int, default=1, help='num of frames to load if dataset is video')
 
@@ -100,5 +101,8 @@ def parse_option(stage='pre-train'):
         if "small" in base_name:
             args.small = True
         args.mixed_precision = False
+
+    if args.image_size[0] == args.image_size[1]:
+        args.image_size = args.image_size[0]
 
     return args
