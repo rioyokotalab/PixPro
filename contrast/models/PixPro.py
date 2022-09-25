@@ -158,23 +158,27 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
 
     if not is_calc_flow:
         # [bs, 7, 7]
-        # center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
-        # center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
-        # center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
-        # center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
-        center_q_x = x_array * q_bin_width + q_start_x
-        center_q_y = y_array * q_bin_height + q_start_y
-        center_k_x = x_array * k_bin_width + k_start_x
-        center_k_y = y_array * k_bin_height + k_start_y
+        center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
+        center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
+        center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
+        center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
+        # center_q_x = x_array * q_bin_width + q_start_x
+        # center_q_y = y_array * q_bin_height + q_start_y
+        # center_k_x = x_array * k_bin_width + k_start_x
+        # center_k_y = y_array * k_bin_height + k_start_y
         center_q_x = center_q_x * (W_orig - 1)
         center_q_y = center_q_y * (H_orig - 1)
         center_k_x = center_k_x * (W_orig - 1)
         center_k_y = center_k_y * (H_orig - 1)
     else:
-        q_x = x_array * q_bin_width + q_start_x
-        q_y = y_array * q_bin_height + q_start_y
-        k_x = x_array * k_bin_width + k_start_x
-        k_y = y_array * k_bin_height + k_start_y
+        q_x = (x_array + 0.5) * q_bin_width + q_start_x
+        q_y = (y_array + 0.5) * q_bin_height + q_start_y
+        k_x = (x_array + 0.5) * k_bin_width + k_start_x
+        k_y = (y_array + 0.5) * k_bin_height + k_start_y
+        # q_x = x_array * q_bin_width + q_start_x
+        # q_y = y_array * q_bin_height + q_start_y
+        # k_x = x_array * k_bin_width + k_start_x
+        # k_y = y_array * k_bin_height + k_start_y
         q_x = q_x * (W_orig - 1)
         q_y = q_y * (H_orig - 1)
         k_x = k_x * (W_orig - 1)
