@@ -432,6 +432,7 @@ def draw_point_positive_pair(q_x, q_y, k_x, k_y, img1_src, img2_src, out_path, c
 
     for idx, (orig_im1, orig_im2, q_grid, k_grid, pos_mask) in enumerate(zip(im1, im2, q_grids, k_grids, pos_masks)):
         l_out_path = os.path.join(out_path, f"batch_{idx}")
+        os.makedirs(l_out_path, exist_ok=True)
         for jdx, (q_g, k_g, p_mask) in enumerate(zip(q_grid, k_grid, pos_mask)):
             l_q_grid = q_g[0]
             l_k_grid = k_g[p_mask]
