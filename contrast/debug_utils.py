@@ -192,7 +192,7 @@ def draw_rect_simple(img_src, rects, colors):
         img = img_src.clone()
         img = transforms.ToPILImage(mode="RGB")(img)
     else:
-        img = img_src
+        img = img_src.copy()
     # rectcolor = (255, 0, 0)  # red
     linewidth = 4  # 線の太さ
 
@@ -327,7 +327,7 @@ def draw_point_simple(img_src, points_src, color_list, width=4, bin_width=None, 
         img = img_src.clone()
         img = transforms.ToPILImage(mode="RGB")(img)
     else:
-        img = img_src
+        img = img_src.copy()
 
     if isinstance(points_src, torch.Tensor):
         points = points_src.clone()
@@ -438,9 +438,15 @@ def draw_point_positive_pair(q_x, q_y, k_x, k_y, img1_src, img2_src, out_path, c
             l_k_grid = k_g[p_mask]
             img1 = draw_point_simple(orig_im1, l_q_grid, color_list, width, q_bin_width[idx], q_bin_height[idx])
             img2 = draw_point_simple(orig_im2, l_k_grid, color_list, width, k_bin_width[idx], k_bin_height[idx])
+            img3 = draw_point_simple(orig_im1, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            img4 = draw_point_simple(orig_im2, l_k_grid, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
+            img3 = draw_point_simple(img3, l_k_grid, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
+            img4 = draw_point_simple(img4, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
             # img1 = draw_point_simple(orig_im1, l_q_grid[0], color_s[0], width, q_bin_width[idx], q_bin_height[idx])
             # img2 = draw_point_simple(orig_im2, l_k_grid[0], color_s[0], width, k_bin_width[idx], k_bin_height[idx])
             img = get_concat_h(img1, img2)
+            img_tmp = get_concat_h(img3, img4)
+            img = get_concat_v(img, img_tmp)
             img.save(os.path.join(l_out_path, f"{name}_{jdx}.png"))
 
 
