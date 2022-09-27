@@ -7,6 +7,8 @@ from torch.distributed import get_world_size
 
 from .base import BaseModel
 
+from contrast import debug_utils
+
 
 class Identity(nn.Module):
     def __init__(self):
@@ -85,6 +87,15 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     """
     N, C, H, W = q.shape
 
+    # debug
+    is_debug = isinstance(coord_q, tuple)
+    if isinstance(coord_q, tuple):
+        prepare_out = debug_utils.prepare_imgs(coord_q, coord_k)
+        coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx = prepare_out
+    out_root = "./output"
+    if isinstance(k, tuple):
+        k, out_root = k
+
     is_calc_flow = isinstance(coord_q, list)
     if is_calc_flow:
         coord_q, flow_fwd = coord_q
@@ -109,6 +120,11 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # [1, 7, 7]
     x_array = torch.arange(0., float(W), dtype=coord_q.dtype, device=coord_q.device).view(1, 1, -1).repeat(1, H, 1)
     y_array = torch.arange(0., float(H), dtype=coord_q.dtype, device=coord_q.device).view(1, -1, 1).repeat(1, 1, W)
+
+    if is_debug:
+        # debug
+        q_grids, k_grids = debug_utils.calc_flow_grid_crop_size(coord_q, coord_k)
+
     # [bs, 1, 1]
     q_bin_width = ((coord_q[:, 2] - coord_q[:, 0]) / W).view(-1, 1, 1)
     q_bin_height = ((coord_q[:, 3] - coord_q[:, 1]) / H).view(-1, 1, 1)
@@ -120,6 +136,8 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     k_start_x = coord_k[:, 0].view(-1, 1, 1)
     k_start_y = coord_k[:, 1].view(-1, 1, 1)
 
+    debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
+                            q_bin_height, k_bin_width, k_bin_height, q_grids, k_grids)
     # [bs, 1, 1]
     # q_flip_x = (coord_q[:, 0] > coord_q[:, 2]).view(-1, 1, 1)
     # q_flip_y = (coord_q[:, 1] > coord_q[:, 3]).view(-1, 1, 1)
@@ -156,6 +174,13 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     k_bin_diag = torch.sqrt((k_bin_width * (W_orig - 1)) ** 2 + (k_bin_height * (H_orig - 1)) ** 2)
     max_bin_diag = torch.max(q_bin_diag, k_bin_diag)
 
+    # debug
+    if is_debug:
+        is_pos = True
+        outs = debug_utils.prepare_dirs(out_root, test_imgs, test_imgs2, coord_q, coord_k, idx, img1, img2, is_calc_flow, is_pos)
+        out_path, out_path_center, color, test_imgs, img1, img2, calc_flow_list, out_path_pos = outs
+        # print(color, "color")
+
     if not is_calc_flow:
         # [bs, 7, 7]
         center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
@@ -170,6 +195,21 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         center_q_y = center_q_y * (H_orig - 1)
         center_k_x = center_k_x * (W_orig - 1)
         center_k_y = center_k_y * (H_orig - 1)
+
+        if is_debug:
+            q_x = center_q_x.clone()
+            q_y = center_q_y.clone()
+            k_x = center_k_x.clone()
+            k_y = center_k_y.clone()
+
+            # debug
+            debug_utils.debug_calc_grid(x_array, y_array, q_start_x, q_start_y,
+                                        k_start_x, k_start_y, q_bin_width,
+                                        q_bin_height, k_bin_width, k_bin_height,
+                                        q_grids, k_grids, center_q_x, center_q_y,
+                                        center_k_x, center_k_y, test_imgs, img1,
+                                        img2, out_path, out_path_center, color,
+                                        W_orig, H_orig)
     else:
         q_x = (x_array + 0.5) * q_bin_width + q_start_x
         q_y = (y_array + 0.5) * q_bin_height + q_start_y
@@ -185,13 +225,48 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         k_y = k_y * (H_orig - 1)
         center_q_x, center_q_y = add_optical_flow(flow_fwd, q_x, q_y, size)
         center_k_x, center_k_y = k_x.clone(), k_y.clone()
+
+        if is_debug:
+            # debug
+            out_path_flo, out_path_center_flo = calc_flow_list  # debug
+            debug_utils.debug_calc_grid(x_array, y_array, q_start_x, q_start_y,
+                                        k_start_x, k_start_y, q_bin_width,
+                                        q_bin_height, k_bin_width, k_bin_height,
+                                        q_grids, k_grids, center_q_x, center_q_y,
+                                        center_k_x, center_k_y, test_imgs, img1,
+                                        img2, out_path, out_path_center, color,
+                                        W_orig, H_orig,
+                                        center_q_x, center_q_y, center_k_x, center_k_y,
+                                        flow_fwd, out_path_flo, out_path_center_flo,
+                                        add_optical_flow)
         # center_q_x, center_q_y = q_x.clone(), q_y.clone()
         # center_k_x, center_k_y = add_optical_flow(flow_fwd, q_x, q_y, size)
+
+    # debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
+    #                         q_bin_height, k_bin_width, k_bin_height,
+    #                         q_bin_diag=q_bin_diag, k_bin_diag=k_bin_diag,
+    #                         max_bin_diag=max_bin_diag, center_q_x=center_q_x,
+    #                         center_q_y=center_q_y, center_k_x=center_k_x,
+    #                         # q_flipx=q_flip_x, q_flip_y=q_flip_y,
+    #                         # k_flip_x=k_flip_x, k_flip_y=k_flip_y,
+    #                         center_k_y=center_k_y)
 
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
                              + (center_q_y.view(-1, H * W, 1) - center_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
     pos_mask = (dist_center < pos_ratio).float().detach()
+
+    if is_debug:
+        pos_masks = (dist_center < pos_ratio)
+        if out_path_pos is None:
+            out_path_pos = out_path_center
+        debug_utils.draw_point_positive_pair(q_x, q_y, k_x, k_y, img1, img2,
+                                             out_path_pos, color, pos_masks,
+                                             "plot_point_positive", 4,
+                                             (q_bin_width * (W_orig - 1)),
+                                             (k_bin_width * (W_orig - 1)),
+                                             (q_bin_height * (H_orig - 1)),
+                                             (k_bin_height * (H_orig - 1)))
 
     # [bs, 49, 49]
     logit = torch.bmm(q.transpose(1, 2), k)
@@ -220,6 +295,9 @@ class PixPro(BaseModel):
         self.pixpro_clamp_value     = args.pixpro_clamp_value
         self.pixpro_transform_layer = args.pixpro_transform_layer
         self.pixpro_ins_loss_weight = args.pixpro_ins_loss_weight
+
+        # debug
+        self.output_root = args.output_dir
 
         # create the encoder
         self.encoder = base_encoder(head_type='early_return')
@@ -366,6 +444,10 @@ class PixPro(BaseModel):
                                                  dim=1)
 
         # compute loss
+        out_root1 = self.output_root + "/test_imgs/in_loss/1"  # debug
+        out_root2 = self.output_root + "/test_imgs/in_loss/2"  # debug
+        proj_2_ng = (proj_2_ng, out_root1)
+        proj_1_ng = (proj_1_ng, out_root2)
         loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio) \
             + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio)
 

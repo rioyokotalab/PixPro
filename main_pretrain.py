@@ -25,75 +25,13 @@ from contrast.lars import add_weight_decay, LARS
 
 from contrast.flow import RAFT
 # from contrast.flow import InputPadder
+from contrast.util import apply_optical_flow
 
 try:
     # noinspection PyUnresolvedReferences
     from apex import amp
 except ImportError:
     amp = None
-
-
-@torch.no_grad()
-def calc_optical_flow(orig_im1_src, orig_im2_src, flow_model, up=False, verbose=False):
-    imgs = [orig_im1_src.clone(), orig_im2_src.clone()]
-    if verbose:
-        orig_im1, orig_im2 = imgs[0].clone(), imgs[-1].clone()
-    i = 1 if up else 0
-    flow_model.eval()
-    flow_fwds = torch.stack([
-        flow_model(img0, img1, upsample=False, test_mode=True)[i]
-        for img0, img1 in zip(imgs[:-1], imgs[1:])
-    ])
-    flow_bwds = torch.stack([
-        flow_model(img0, img1, upsample=False, test_mode=True)[i]
-        for img0, img1 in zip(imgs[1:][::-1], imgs[:-1][::-1])
-    ])
-    flow_fwd = flow_fwds[0].cuda()
-    flow_bwd = flow_bwds[0].cuda()
-    if verbose:
-        rank = dist.get_rank()
-        print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
-        print(f"rank: {rank} orig_im1: {orig_im1.shape}", orig_im1.tolist())
-        print(f"rank: {rank} orig_im2: {orig_im2.shape}", orig_im2.tolist())
-        print(f"rank: {rank} flow_fwd: {flow_fwd.shape}", flow_fwd.tolist())
-        print(f"rank: {rank} flow_bwd: {flow_bwd.shape}", flow_bwd.tolist())
-    return flow_fwd, flow_bwd
-
-
-@torch.no_grad()
-def apply_optical_flow(data, flow_model, args):
-    orig_im1, orig_im2 = data[6], data[7]
-    size = torch.tensor(orig_im1.shape[-2:]).cuda()
-    bs = orig_im1.shape[0]
-    # to reduce memory usage
-    flow_fwds, flow_bwds = [], []
-    s_index = 0 if bs % 2 == 0 else 1
-    if bs % 2 != 0:
-        l_orig_im1 = orig_im1[0:1]
-        l_orig_im2 = orig_im2[0:1]
-        flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                               flow_model, up=args.flow_up,
-                                               verbose=args.verbose)
-        flow_fwds.append(flow_fwd)
-        flow_bwds.append(flow_bwd)
-    for i in range(s_index, bs, 2):
-        if i + 2 > bs:
-            break
-        l_orig_im1 = orig_im1[i:i+2]
-        l_orig_im2 = orig_im2[i:i+2]
-        flow_fwd, flow_bwd = calc_optical_flow(l_orig_im1, l_orig_im2,
-                                               flow_model, up=args.flow_up,
-                                               verbose=args.verbose)
-        flow_fwds.append(flow_fwd)
-        flow_bwds.append(flow_bwd)
-    flow_fwd = torch.cat(flow_fwds, dim=0)
-    flow_bwd = torch.cat(flow_bwds, dim=0)
-    # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
-    flow_fwd = flow_fwd.cuda()
-    flow_bwd = flow_bwd.cuda()
-    flow_fwd = [flow_fwd, size]
-    flow_bwd = [flow_bwd, size]
-    return flow_fwd, flow_bwd
 
 
 def build_model(args):
@@ -261,6 +199,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]
 
+        if args.debug:
+            data[2] = (data[2], [data[6], idx])
+            data[3] = (data[3], [data[7], idx])
+
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss = model(data[0], data[1], data[2], data[3])
 
@@ -294,6 +236,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar('lr', lr, step)
                 summary_writer.add_scalar('loss', loss_meter.val, step)
 
+        if args.debug:
+            continue
+
         if dist.get_rank() == 0:
             global_step = (epoch - 1) * train_len + idx
             loss_plus = loss_meter.val + 4.0
@@ -314,8 +259,9 @@ def main_prog(opt):
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
         logger.info("Full config saved to {}".format(path))
-        init_wandb(opt)
-        wandb.save(path, base_path=opt.output_dir)
+        if not opt.debug:
+            init_wandb(opt)
+            wandb.save(path, base_path=opt.output_dir)
 
     # print args
     logger.info(
