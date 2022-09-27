@@ -135,13 +135,22 @@ def regression_loss(q, k, coord_q, coord_k, weight=1.0, pos_ratio=0.5):
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
                              + (center_q_y.view(-1, H * W, 1) - center_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
-    dist_center = dist_center * weight
-    pos_mask = (dist_center < pos_ratio).float().detach()
+    dist_center_w = dist_center * weight
+    pos_mask = (dist_center_w < pos_ratio).float().detach()
 
     if is_debug and out_path_pos is not None:
         pos_masks = (dist_center < pos_ratio)
         debug_utils.draw_point_positive_pair(q_x, q_y, k_x, k_y, img1, img2,
                                              out_path_pos, color, pos_masks,
+                                             "plot_point_positive", 4,
+                                             (q_bin_width * (W_orig - 1)),
+                                             (k_bin_width * (W_orig - 1)),
+                                             (q_bin_height * (H_orig - 1)),
+                                             (k_bin_height * (H_orig - 1)))
+        pos_masks_w = (dist_center_w < pos_ratio)
+        out_path_pos_w = f"{out_path_pos}/weight"
+        debug_utils.draw_point_positive_pair(q_x, q_y, k_x, k_y, img1, img2,
+                                             out_path_pos_w, color, pos_masks_w,
                                              "plot_point_positive", 4,
                                              (q_bin_width * (W_orig - 1)),
                                              (k_bin_width * (W_orig - 1)),
