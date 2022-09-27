@@ -53,7 +53,7 @@ def regression_loss(q, k, coord_q, coord_k, weight=1.0, pos_ratio=0.5):
     is_debug = isinstance(coord_q, tuple)
     if isinstance(coord_q, tuple):
         prepare_out = debug_utils.prepare_imgs(coord_q, coord_k)
-        coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx = prepare_out
+        coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx, epoch = prepare_out
     out_root = "./output"
     if isinstance(k, tuple):
         k, out_root = k
@@ -95,7 +95,7 @@ def regression_loss(q, k, coord_q, coord_k, weight=1.0, pos_ratio=0.5):
 
     # debug
     if is_debug:
-        outs = debug_utils.prepare_dirs(out_root, test_imgs, test_imgs2, coord_q, coord_k, idx, img1, img2, False, True)
+        outs = debug_utils.prepare_dirs(out_root, test_imgs, test_imgs2, coord_q, coord_k, idx, epoch, img1, img2, False, True)
         out_path, out_path_center, color, test_imgs, img1, img2, calc_flow_list, out_path_pos = outs
         # print(color, "color")
 

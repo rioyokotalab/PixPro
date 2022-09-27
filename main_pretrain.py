@@ -164,8 +164,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         data = [item.cuda(non_blocking=True) for item in data]
 
         if args.debug:
-            data[2] = (data[2], [data[6], idx])
-            data[3] = (data[3], [data[7], idx])
+            data[2] = (data[2], [data[6], idx, epoch])
+            data[3] = (data[3], [data[7], idx, epoch])
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss = model(data[0], data[1], data[2], data[3])

@@ -12,12 +12,12 @@ from PIL import Image
 
 def prepare_imgs(coord_q, coord_k):
     if isinstance(coord_q, tuple):
-        idx = None
+        idx, epoch = None, None
         coord_q, test_imgs = coord_q
         coord_k, test_imgs2 = coord_k
         if isinstance(test_imgs, list):
-            test_imgs, idx = test_imgs
-            test_imgs2, _ = test_imgs2
+            test_imgs, idx, epoch = test_imgs
+            test_imgs2, _, _ = test_imgs2
         ndim = test_imgs.ndim
         img1, img2 = None, None
         if ndim > 4:
@@ -25,17 +25,18 @@ def prepare_imgs(coord_q, coord_k):
             img2 = test_imgs[:, 2]
             test_imgs = test_imgs[:, 0]
             test_imgs2 = None
-    return coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx
+    return coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx, epoch
 
 
-def prepare_dirs(out_root, test_imgs, test_imgs2, coord_q, coord_k, idx, img1, img2, is_calc_flow, is_pos=False):
-    base_name = os.path.basename(out_root)
+def prepare_dirs(out_root_src, test_imgs, test_imgs2, coord_q, coord_k, idx, epoch, img1, img2, is_calc_flow, is_pos=False):
+    base_name = os.path.basename(out_root_src)
     is_reverse = base_name == "2"
     color = [(255, 165, 0), (0, 0, 255)]
     if is_reverse:
         color_tmp = color[0]
         color[0] = color[1]
         color[1] = color_tmp
+    out_root = f"{out_root_src}/epoch_{epoch}"
     out_path_center = f"{out_root}/center"
     out_path = f"{out_root}/no_center"
     os.makedirs(out_path_center, exist_ok=True)
