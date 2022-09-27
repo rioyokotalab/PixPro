@@ -163,6 +163,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     for idx, data in enumerate(train_loader):
         data = [item.cuda(non_blocking=True) for item in data]
 
+        if args.debug:
+            data[2] = (data[2], [data[6], idx])
+            data[3] = (data[3], [data[7], idx])
+
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss = model(data[0], data[1], data[2], data[3])
 
@@ -196,6 +200,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar('lr', lr, step)
                 summary_writer.add_scalar('loss', loss_meter.val, step)
 
+        if args.debug:
+            continue
+
         if dist.get_rank() == 0:
             global_step = (epoch - 1) * train_len + idx
             loss_plus = loss_meter.val + 4.0
@@ -206,6 +213,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
 
 def main_prog(opt):
+    cudnn.benchmark = not opt.no_benchmark
     # setup logger
     os.makedirs(opt.output_dir, exist_ok=True)
     global logger
@@ -215,8 +223,9 @@ def main_prog(opt):
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
         logger.info("Full config saved to {}".format(path))
-        init_wandb(opt)
-        wandb.save(path, base_path=opt.output_dir)
+        if not opt.debug:
+            init_wandb(opt)
+            wandb.save(path, base_path=opt.output_dir)
 
     # print args
     logger.info(
@@ -234,6 +243,5 @@ if __name__ == '__main__':
 
     torch.cuda.set_device(opt.local_rank)
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
-    cudnn.benchmark = True
 
     main_prog(opt)

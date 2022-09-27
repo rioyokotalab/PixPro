@@ -60,6 +60,8 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--start-epoch', type=int, default=1, help='used for resume')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
     parser.add_argument('--debug-epochs', type=int, default=100, help='debug number of training epochs')
+    parser.add_argument('--debug', action='store_true', help='debug mode')
+    parser.add_argument('--no_benchmark', action='store_true', help='torch.backends.cudnn.benchmark set to False')
 
     # misc
     parser.add_argument('--output-dir', type=str, default='./output', help='output director')

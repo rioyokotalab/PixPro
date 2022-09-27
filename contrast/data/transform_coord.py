@@ -206,7 +206,11 @@ class RandomResizedCropCoord(object):
         """
         i, j, h, w, height, width = self.get_params(img, self.scale, self.ratio)
         coord = torch.Tensor([float(j) / (width - 1), float(i) / (height - 1),
-                              float(j + w - 1) / (width - 1), float(i + h - 1) / (height - 1)])
+                              float(j + w - 1) / (width - 1), float(i + h - 1) / (height - 1),
+                              float(j), float(i), float(w), float(h), float(width), float(height)])
+        # rank = torch.distributed.get_rank()
+        # print(f"rank: {rank} in crop top (j, i): ({j}, {i}) bottom (j + w, i + h): ({j + w}, {i + h})")
+        # print(f"rank: {rank} in crop size (h, w): ({h}, {w}) origin size (h, w): ({height}, {width})")
         return F.resized_crop(img, i, j, h, w, self.size, self.interpolation), coord
 
     def __repr__(self):

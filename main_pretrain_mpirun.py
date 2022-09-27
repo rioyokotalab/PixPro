@@ -2,7 +2,6 @@ import os
 
 import torch
 import torch.distributed as dist
-from torch.backends import cudnn
 
 from contrast.option import parse_option
 
@@ -46,6 +45,5 @@ if __name__ == '__main__':
     opt.local_rank = local_rank
     torch.cuda.set_device(opt.local_rank)
     # torch.distributed.init_process_group(backend='nccl', init_method='env://')
-    cudnn.benchmark = True
 
     main_prog(opt)
