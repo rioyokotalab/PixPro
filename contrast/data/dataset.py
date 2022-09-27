@@ -3,6 +3,7 @@ import logging
 import os
 import time
 import random
+import warnings
 
 import torch.distributed as dist
 import torch.utils.data as data
@@ -30,7 +31,7 @@ def find_classes(dir):
     return classes, class_to_idx
 
 
-def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False):
+def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1):
     images = []
     dir = os.path.expanduser(dir)
     for target in sorted(os.listdir(dir)):
@@ -53,12 +54,12 @@ def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False):
             images.append(videos)
 
     if is_bdd100k:
-        images = VideoSample(images)
+        images = VideoSample(images, n_frames=n_frames)
 
     return images
 
 
-def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet'):
+def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet', n_frames=1):
     images = []
 
     # make COCO dataset
@@ -105,21 +106,33 @@ def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet'):
     if is_bdd100k:
         if len(videos) > 0:
             images.append(videos)
-        images = VideoSample(images)
+        images = VideoSample(images, n_frames=n_frames)
 
     return images
 
 
 class VideoSample(data.Dataset):
-    def __init__(self, samples):
+    def __init__(self, samples, n_frames=1):
         super().__init__()
         self.samples = samples
+        self.n_frames = n_frames
 
     def __getitem__(self, index):
         video = self.samples[index]
-        len_img = len(video)
-        local_i = random.randint(0, len_img - 1)
+        n_video = len(video)
+        n_frames = self.n_frames if n_video >= self.n_frames else n_video
+        len_img = n_video - n_frames
+        local_i = random.randint(0, len_img)
         path, target = video[local_i]
+
+        if self.n_frames > 1:
+            if n_frames <= 1:
+                video_name = os.path.dirname(path)
+                warnings.warn(f"{n_frames} videos can only be loaded in {video_name}")
+            next_local_i = local_i + n_frames - 1
+            next_path, next_target = video[next_local_i]
+            path = [path, next_path]
+            target = [target, next_target]
 
         return path, target
 
@@ -149,17 +162,18 @@ class DatasetFolder(data.Dataset):
     """
 
     def __init__(self, root, loader, extensions, ann_file='', img_prefix='', transform=None, target_transform=None,
-                 cache_mode="no", dataset='ImageNet'):
+                 cache_mode="no", dataset='ImageNet', n_frames=1):
         # image folder mode
         if ann_file == '':
             _, class_to_idx = find_classes(root)
-            samples = make_dataset(root, class_to_idx, extensions, dataset == "bdd100k")
+            samples = make_dataset(root, class_to_idx, extensions, dataset == "bdd100k", n_frames)
         # zip mode
         else:
             samples = make_dataset_with_ann(os.path.join(root, ann_file),
                                             os.path.join(root, img_prefix),
                                             extensions,
-                                            dataset)
+                                            dataset,
+                                            n_frames)
 
         if len(samples) == 0:
             raise(RuntimeError("Found 0 files in subfolders of: " + root + "\n"
@@ -170,7 +184,7 @@ class DatasetFolder(data.Dataset):
         self.extensions = extensions
 
         self.samples = samples
-        self.labels = [y_1k for _, y_1k in samples]
+        self.labels = [y_1k if not isinstance(y_1k, list) else y_1k[0] for _, y_1k in samples]
         self.classes = list(set(self.labels))
 
         self.transform = transform
@@ -210,6 +224,9 @@ class DatasetFolder(data.Dataset):
         """
         path, target = self.samples[index]
         sample = self.loader(path)
+        if isinstance(sample, list):
+            sample = sample[0]
+            target = target[0]
         if self.transform is not None:
             sample = self.transform(sample)
         if self.target_transform is not None:
@@ -265,6 +282,13 @@ def default_img_loader(path):
         return pil_loader(path)
 
 
+def default_imgs_loader(path_list):
+    sample = []
+    for path in path_list:
+        sample.append(default_img_loader(path))
+    return sample
+
+
 class ImageFolder(DatasetFolder):
     """A generic data loader where the images are arranged in this way: ::
         root/dog/xxx.png
@@ -286,11 +310,13 @@ class ImageFolder(DatasetFolder):
 
     def __init__(self, root, ann_file='', img_prefix='', transform=None, target_transform=None,
                  loader=default_img_loader, cache_mode="no", dataset='ImageNet',
-                 two_crop=False, return_coord=False):
+                 two_crop=False, return_coord=False, n_frames=1):
+        if n_frames > 1 and dataset == "bdd100k":
+            loader = default_imgs_loader
         super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
                                           ann_file=ann_file, img_prefix=img_prefix,
                                           transform=transform, target_transform=target_transform,
-                                          cache_mode=cache_mode, dataset=dataset)
+                                          cache_mode=cache_mode, dataset=dataset, n_frames=n_frames)
         self.imgs = self.samples
         self.two_crop = two_crop
         self.return_coord = return_coord
@@ -303,24 +329,28 @@ class ImageFolder(DatasetFolder):
             tuple: (image, target) where target is class_index of the target class.
         """
         path, target = self.samples[index]
-        image = self.loader(path)
+        images = self.loader(path)
+        if not isinstance(images, list):
+            images = [images]
+        if isinstance(target, list):
+            target = target[0]
 
         if self.transform is not None:
             if isinstance(self.transform, tuple) and len(self.transform) == 2:
-                img = self.transform[0](image)
+                img = self.transform[0](images[0])
             else:
-                img = self.transform(image)
+                img = self.transform(images[0])
         else:
-            img = image
+            img = images[0]
 
         if self.target_transform is not None:
             target = self.target_transform(target)
 
         if self.two_crop:
             if isinstance(self.transform, tuple) and len(self.transform) == 2:
-                img2 = self.transform[1](image)
+                img2 = self.transform[1](images[-1])
             else:
-                img2 = self.transform(image)
+                img2 = self.transform(images[-1])
 
         if self.return_coord:
             assert isinstance(img, tuple)
