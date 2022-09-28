@@ -559,20 +559,12 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
 
         draw_points(center_q_x_tmp, center_q_y_tmp, center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path, color, f"{name}_{i}", 0)
         draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path, color[1], f"{name}_2grid_on_1frame_{i}", 0)
-        draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, test_imgs[i],
-                      f"{name}_2frame_aug_img_q_{i}", out_path_flo)
-        draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, test_imgs[i],
-                      f"{name}_2frame_aug_img_k_{i}", out_path_flo)
         if img1 is not None:
             # draw_points(center_q_x_tmp, center_q_y_tmp, center_k_x_tmp, center_k_y_tmp, img1[i], out_path, color, f"{name}_1frame_{i}", 0)
             draw_points_onegrid(center_q_x_tmp, center_q_y_tmp, img1[i], out_path, color[0], f"{name}_1frame_{i}", 0)
-            draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, img1[i],
-                          f"{name}_1frame_aug_img_{i}", out_path_flo)
         if img2 is not None:
             # draw_points(center_q_x_tmp, center_q_y_tmp, center_k_x_tmp, center_k_y_tmp, img2[i], out_path, color, f"{name}_2frame_{i}", 0)
             draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, img2[i], out_path, color[1], f"{name}_2frame_{i}", 0)
-            draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, img2[i],
-                          f"{name}_2frame_aug_img_{i}", out_path_flo)
         # if rank == 0:
         #     print(f"{i} center_q_x_tmp: {center_q_x_tmp.shape}", center_q_x_tmp.tolist())
         #     print(f"{i} center_q_y_tmp: {center_q_y_tmp.shape}", center_q_x_tmp.tolist())
@@ -591,13 +583,21 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
             q_y_tmp = q_y_tmp.squeeze(0)
             draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path_flo, color, f"{name}_{i}", 0)
             draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path_flo, color[1], f"{name}_2frame_on_1frame_{i}", 0)
+            draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, test_imgs[i],
+                          f"{name}_2frame_aug_img_q_{i}", out_path_flo)
+            draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, test_imgs[i],
+                          f"{name}_2frame_aug_img_k_{i}", out_path_flo)
             if img1 is not None:
                 # draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, img1[i], out_path_flo, color, f"{name}_1frame_{i}", 0)
                 draw_points_onegrid(q_x_tmp, q_y_tmp, img1[i], out_path_flo, color[0], f"{name}_1frame_{i}", 0)
+                draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, img1[i],
+                              f"{name}_1frame_aug_img_{i}", out_path_flo)
             if img2 is not None:
                 # draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, img2[i],
                 #             out_path_flo, color, f"{name}_2frame_{i}", 0)
                 draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, img2[i], out_path_flo, color[1], f"{name}_2frame_{i}", 0)
+                draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, img2[i],
+                              f"{name}_2frame_aug_img_{i}", out_path_flo)
             # if rank == 0:
             #     print(f"{i} q_x_tmp: {q_x_tmp.shape}", q_x_tmp.tolist())
             #     print(f"{i} q_y_tmp: {q_y_tmp.shape}", q_x_tmp.tolist())
