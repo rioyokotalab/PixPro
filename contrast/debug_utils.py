@@ -10,17 +10,14 @@ from PIL import ImageDraw
 from PIL import Image
 
 
-rank = torch.distributed.get_rank()
-
-
 def prepare_imgs(coord_q, coord_k):
     if isinstance(coord_q, tuple):
-        idx = None
+        idx, epoch = None, None
         coord_q, test_imgs = coord_q
         coord_k, test_imgs2 = coord_k
         if isinstance(test_imgs, list):
-            test_imgs, idx = test_imgs
-            test_imgs2, _ = test_imgs2
+            test_imgs, idx, epoch = test_imgs
+            test_imgs2, _, _ = test_imgs2
         ndim = test_imgs.ndim
         img1, img2 = None, None
         if ndim > 4:
@@ -28,17 +25,18 @@ def prepare_imgs(coord_q, coord_k):
             img2 = test_imgs[:, 2]
             test_imgs = test_imgs[:, 0]
             test_imgs2 = None
-    return coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx
+    return coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx, epoch
 
 
-def prepare_dirs(out_root, test_imgs, test_imgs2, coord_q, coord_k, idx, img1, img2, is_calc_flow, is_pos):
-    base_name = os.path.basename(out_root)
+def prepare_dirs(out_root_src, test_imgs, test_imgs2, coord_q, coord_k, idx, epoch, img1, img2, is_calc_flow, is_pos=False):
+    base_name = os.path.basename(out_root_src)
     is_reverse = base_name == "2"
     color = [(255, 165, 0), (0, 0, 255)]
     if is_reverse:
         color_tmp = color[0]
         color[0] = color[1]
         color[1] = color_tmp
+    out_root = f"{out_root_src}/epoch_{epoch}"
     out_path_center = f"{out_root}/center"
     out_path = f"{out_root}/no_center"
     os.makedirs(out_path_center, exist_ok=True)
@@ -87,12 +85,6 @@ def calc_flow_grid_crop_size(coord_q, coord_k):
     return q_grids, k_grids
 
 
-def _debug_print(*args, flag="None"):
-    if rank == 0:
-        if flag != "None":
-            print(*args)
-
-
 def debug_print(q_start_x="None", q_start_y="None", k_start_x="None", k_start_y="None",
                 q_bin_width="None", q_bin_height="None", k_bin_width="None",
                 k_bin_height="None", q_grids="None", k_grids="None", q_bin_diag="None",
@@ -101,35 +93,62 @@ def debug_print(q_start_x="None", q_start_y="None", k_start_x="None", k_start_y=
                 center_q_x_o="None", center_q_y_o="None", center_k_x_o="None",
                 center_k_y_o="None", q_flip_x="None", q_flip_y="None", k_flip_x="None",
                 k_flip_y="None"):
-    _debug_print(f"q_flip_x: {q_flip_x.shape}", q_flip_x.tolist(), flag=q_flip_x)
-    _debug_print(f"q_flip_y: {q_flip_y.shape}", q_flip_y.tolist(), flag=q_flip_y)
-    _debug_print(f"k_flip_x: {k_flip_x.shape}", k_flip_x.tolist(), flag=k_flip_x)
-    _debug_print(f"k_flip_y: {k_flip_y.shape}", k_flip_y.tolist(), flag=k_flip_y)
-    _debug_print(f"q_start_x: {q_start_x.shape}", q_start_x.tolist(), flag=q_start_x)
-    _debug_print(f"q_start_y: {q_start_y.shape}", q_start_y.tolist(), flag=q_start_y)
-    _debug_print(f"k_start_x: {k_start_x.shape}", k_start_x.tolist(), flag=k_start_x)
-    _debug_print(f"k_start_y: {k_start_y.shape}", k_start_y.tolist(), flag=k_start_y)
-    _debug_print(f"q_bin_width: {q_bin_width.shape}", q_bin_width.tolist(), flag=q_bin_width)
-    _debug_print(f"q_bin_height: {q_bin_height.shape}", q_bin_height.tolist(), flag=q_bin_height)
-    _debug_print(f"k_bin_width: {k_bin_width.shape}", k_bin_width.tolist(), flag=k_bin_width)
-    _debug_print(f"k_bin_height: {k_bin_height.shape}", k_bin_height.tolist(), flag=k_bin_height)
-    if q_grids != "None" and k_grids != "None":
-        for ii, (q_grid, k_grid) in enumerate(zip(q_grids, k_grids)):
-            _debug_print(f"{ii} q_grid: {q_grid.shape}", flag=q_grid)
-            _debug_print(f"{ii} k_grid: {k_grid.shape}", flag=k_grid)
-            # _debug_print(f"{ii} q_grid: {q_grid.shape}", q_grid.tolist(), flag=q_grid)
-            # _debug_print(f"{ii} k_grid: {k_grid.shape}", k_grid.tolist(), flag=k_grid)
-    _debug_print(f"q_bin_diag: {q_bin_diag.shape}", q_bin_diag.tolist(), flag=q_bin_diag)
-    _debug_print(f"k_bin_diag: {k_bin_diag.shape}", k_bin_diag.tolist(), flag=k_bin_diag)
-    _debug_print(f"max_bin_diag: {max_bin_diag.shape}", max_bin_diag.tolist(), flag=max_bin_diag)
-    _debug_print(f"center_q_x: {center_q_x.shape}", center_q_x.tolist(), flag=center_q_x)
-    _debug_print(f"center_q_y: {center_q_y.shape}", center_q_y.tolist(), flag=center_q_y)
-    _debug_print(f"center_k_x: {center_k_x.shape}", center_k_x.tolist(), flag=center_k_x)
-    _debug_print(f"center_k_y: {center_k_y.shape}", center_k_y.tolist(), flag=center_k_y)
-    _debug_print(f"center_q_x_o: {center_q_x_o.shape}", center_q_x_o.tolist(), flag=center_q_x_o)
-    _debug_print(f"center_q_y_o: {center_q_y_o.shape}", center_q_y_o.tolist(), flag=center_q_y_o)
-    _debug_print(f"center_k_x_o: {center_k_x_o.shape}", center_k_x_o.tolist(), flag=center_k_x_o)
-    _debug_print(f"center_k_y_o: {center_k_y_o.shape}", center_k_y_o.tolist(), flag=center_k_y_o)
+    rank = torch.distributed.get_rank()
+    if rank == 0:
+        if q_flip_x != "None":
+            print(f"q_flip_x: {q_flip_x.shape}", q_flip_x.tolist())
+        if q_flip_y != "None":
+            print(f"q_flip_y: {q_flip_y.shape}", q_flip_y.tolist())
+        if k_flip_x != "None":
+            print(f"k_flip_x: {k_flip_x.shape}", k_flip_x.tolist())
+        if k_flip_y != "None":
+            print(f"k_flip_y: {k_flip_y.shape}", k_flip_y.tolist())
+        if q_start_x != "None":
+            print(f"q_start_x: {q_start_x.shape}", q_start_x.tolist())
+        if q_start_y != "None":
+            print(f"q_start_y: {q_start_y.shape}", q_start_y.tolist())
+        if k_start_x != "None":
+            print(f"k_start_x: {k_start_x.shape}", k_start_x.tolist())
+        if k_start_y != "None":
+            print(f"k_start_y: {k_start_y.shape}", k_start_y.tolist())
+        if q_bin_width != "None":
+            print(f"q_bin_width: {q_bin_width.shape}", q_bin_width.tolist())
+        if q_bin_height != "None":
+            print(f"q_bin_height: {q_bin_height.shape}", q_bin_height.tolist())
+        if k_bin_width != "None":
+            print(f"k_bin_width: {k_bin_width.shape}", k_bin_width.tolist())
+        if k_bin_height != "None":
+            print(f"k_bin_height: {k_bin_height.shape}", k_bin_height.tolist())
+        if q_grids != "None" and k_grids != "None":
+            for ii, (q_grid, k_grid) in enumerate(zip(q_grids, k_grids)):
+                if q_grid != "None":
+                    print(f"{ii} q_grid: {q_grid.shape}")
+                    # print(f"{ii} q_grid: {q_grid.shape}", q_grid.tolist())
+                if k_grid != "None":
+                    print(f"{ii} k_grid: {k_grid.shape}")
+                    # print(f"{ii} k_grid: {k_grid.shape}", k_grid.tolist())
+        if q_bin_diag != "None":
+            print(f"q_bin_diag: {q_bin_diag.shape}", q_bin_diag.tolist())
+        if k_bin_diag != "None":
+            print(f"k_bin_diag: {k_bin_diag.shape}", k_bin_diag.tolist())
+        if max_bin_diag != "None":
+            print(f"max_bin_diag: {max_bin_diag.shape}", max_bin_diag.tolist())
+        if center_q_x != "None":
+            print(f"center_q_x: {center_q_x.shape}", center_q_x.tolist())
+        if center_q_y != "None":
+            print(f"center_q_y: {center_q_y.shape}", center_q_y.tolist())
+        if center_k_x != "None":
+            print(f"center_k_x: {center_k_x.shape}", center_k_x.tolist())
+        if center_k_y != "None":
+            print(f"center_k_y: {center_k_y.shape}", center_k_y.tolist())
+        if center_q_x_o != "None":
+            print(f"center_q_x_o: {center_q_x_o.shape}", center_q_x_o.tolist())
+        if center_q_y_o != "None":
+            print(f"center_q_y_o: {center_q_y_o.shape}", center_q_y_o.tolist())
+        if center_k_x_o != "None":
+            print(f"center_k_x_o: {center_k_x_o.shape}", center_k_x_o.tolist())
+        if center_k_y_o != "None":
+            print(f"center_k_y_o: {center_k_y_o.shape}", center_k_y_o.tolist())
 
 
 def calc_grid_no_center(x_array, y_array, q_bin_width, q_bin_height, k_bin_width,
@@ -173,7 +192,7 @@ def draw_rect_simple(img_src, rects, colors):
         img = img_src.clone()
         img = transforms.ToPILImage(mode="RGB")(img)
     else:
-        img = img_src
+        img = img_src.copy()
     # rectcolor = (255, 0, 0)  # red
     linewidth = 4  # 線の太さ
 
@@ -308,7 +327,7 @@ def draw_point_simple(img_src, points_src, color_list, width=4, bin_width=None, 
         img = img_src.clone()
         img = transforms.ToPILImage(mode="RGB")(img)
     else:
-        img = img_src
+        img = img_src.copy()
 
     if isinstance(points_src, torch.Tensor):
         points = points_src.clone()
@@ -319,6 +338,8 @@ def draw_point_simple(img_src, points_src, color_list, width=4, bin_width=None, 
                 points = list(itertools.chain.from_iterable(points))
         elif ndim == 1:
             points = points.unsqueeze(0).tolist()
+        else:
+            points = points.tolist()
     else:
         points = points_src
 
@@ -332,11 +353,14 @@ def draw_point_simple(img_src, points_src, color_list, width=4, bin_width=None, 
         draw.point(points, fill=color_list)
         return img
 
+    len_c = len(color_list)
+    if isinstance(color_list, list):
+        print(len_c, "# color")
     for i, point in enumerate(points):
         if isinstance(color_list, tuple):
             l_color = color_list
         else:
-            l_color = tuple(color_list[i])
+            l_color = tuple(color_list[i % len_c])
         point_tmp = [(point[0] - (width / 2), point[1] - (width / 2)), (point[0] + (width / 2), point[1] + (width / 2))]
         draw.ellipse(point_tmp, fill=l_color, width=width)
         if bin_width is not None and bin_height is not None:
@@ -407,20 +431,35 @@ def draw_point_positive_pair(q_x, q_y, k_x, k_y, img1_src, img2_src, out_path, c
     q_grids = q_grids.view(nb, h * w, 1, c).repeat(1, 1, h * w, 1)
     k_grids = k_grids.view(nb, 1, h * w, c).repeat(1, h * w, 1, 1)
     color_list = create_colors(color_s[0])
+    # color_list = color_s[0]
 
     for idx, (orig_im1, orig_im2, q_grid, k_grid, pos_mask) in enumerate(zip(im1, im2, q_grids, k_grids, pos_masks)):
-        l_q_grid = q_grid[pos_mask]
-        l_k_grid = k_grid[pos_mask]
-        img1 = draw_point_simple(orig_im1, l_q_grid, color_list, width, True, q_bin_width[idx], q_bin_height[idx])
-        img2 = draw_point_simple(orig_im2, l_k_grid, color_list, width, True, k_bin_width[idx], k_bin_height[idx])
-        # img1 = draw_point_simple(orig_im1, l_q_grid[0], color_s[0], width, True, q_bin_width[idx], q_bin_height[idx])
-        # img2 = draw_point_simple(orig_im2, l_k_grid[0], color_s[0], width, True, k_bin_width[idx], k_bin_height[idx])
-        img = get_concat_h(img1, img2)
-        img.save(os.path.join(out_path, f"{name}_{idx}.png"))
+        l_out_path = os.path.join(out_path, f"batch_{idx}")
+        os.makedirs(l_out_path, exist_ok=True)
+
+        img1_all = draw_point_simple(orig_im1, q_grid[pos_mask], color_list, width, q_bin_width[idx], q_bin_height[idx])
+        img2_all = draw_point_simple(orig_im2, k_grid[pos_mask], color_list, width, k_bin_width[idx], k_bin_height[idx])
+        img_all = get_concat_h(img1_all, img2_all)
+        img_all.save(os.path.join(out_path, f"{name}_{idx}.png"))
+
+        for jdx, (q_g, k_g, p_mask) in enumerate(zip(q_grid, k_grid, pos_mask)):
+            l_q_grid = q_g[0]
+            l_k_grid = k_g[p_mask]
+            img1 = draw_point_simple(orig_im1, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            img2 = draw_point_simple(orig_im2, l_k_grid, color_s[0], width, k_bin_width[idx], k_bin_height[idx])
+            img3 = draw_point_simple(orig_im1, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            img4 = draw_point_simple(orig_im2, l_k_grid, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
+            img3 = draw_point_simple(img3, l_k_grid, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
+            img4 = draw_point_simple(img4, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            # img1 = draw_point_simple(orig_im1, l_q_grid[0], color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            # img2 = draw_point_simple(orig_im2, l_k_grid[0], color_s[0], width, k_bin_width[idx], k_bin_height[idx])
+            img = get_concat_h(img1, img2)
+            img_tmp = get_concat_h(img3, img4)
+            img = get_concat_v(img, img_tmp)
+            img.save(os.path.join(l_out_path, f"{name}_{jdx}.png"))
 
 
 def draw_warp_img(grid_x, grid_y, W_orig, H_orig, img_src, name, out_path, mask_src=None):
-    # rank = torch.distributed.get_rank()
     grid = torch.stack([grid_x, grid_y]).unsqueeze(0)
     grid[:, 0] = grid[:, 0] / (W_orig - 1)
     grid[:, 1] = grid[:, 1] / (H_orig - 1)
@@ -460,6 +499,7 @@ def draw_warp_img(grid_x, grid_y, W_orig, H_orig, img_src, name, out_path, mask_
         pil_of_img = transforms.ToPILImage(mode="RGB")(of_img.squeeze(0))
         pil_of_img.save(os.path.join(out_path, f"{name}_mask.png"))
     # save_image((of_img * 255), os.path.join(out_path, f"{name}2.png"))
+    # rank = torch.distributed.get_rank()
     # if rank == 0:
     #     print(f"{i} orig_img_copy: {orig_img_copy.shape}", orig_img_copy.tolist())
     #     print(f"{i} of_q_grid: {of_q_grid.shape}", of_q_grid.tolist())
@@ -519,20 +559,12 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
 
         draw_points(center_q_x_tmp, center_q_y_tmp, center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path, color, f"{name}_{i}", 0)
         draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path, color[1], f"{name}_2grid_on_1frame_{i}", 0)
-        draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, test_imgs[i],
-                      f"{name}_2frame_aug_img_q_{i}", out_path_flo)
-        draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, test_imgs[i],
-                      f"{name}_2frame_aug_img_k_{i}", out_path_flo)
         if img1 is not None:
             # draw_points(center_q_x_tmp, center_q_y_tmp, center_k_x_tmp, center_k_y_tmp, img1[i], out_path, color, f"{name}_1frame_{i}", 0)
             draw_points_onegrid(center_q_x_tmp, center_q_y_tmp, img1[i], out_path, color[0], f"{name}_1frame_{i}", 0)
-            draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, img1[i],
-                          f"{name}_1frame_aug_img_{i}", out_path_flo)
         if img2 is not None:
             # draw_points(center_q_x_tmp, center_q_y_tmp, center_k_x_tmp, center_k_y_tmp, img2[i], out_path, color, f"{name}_2frame_{i}", 0)
             draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, img2[i], out_path, color[1], f"{name}_2frame_{i}", 0)
-            draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, img2[i],
-                          f"{name}_2frame_aug_img_{i}", out_path_flo)
         # if rank == 0:
         #     print(f"{i} center_q_x_tmp: {center_q_x_tmp.shape}", center_q_x_tmp.tolist())
         #     print(f"{i} center_q_y_tmp: {center_q_y_tmp.shape}", center_q_x_tmp.tolist())
@@ -551,13 +583,21 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
             q_y_tmp = q_y_tmp.squeeze(0)
             draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path_flo, color, f"{name}_{i}", 0)
             draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path_flo, color[1], f"{name}_2frame_on_1frame_{i}", 0)
+            draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, test_imgs[i],
+                          f"{name}_2frame_aug_img_q_{i}", out_path_flo)
+            draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, test_imgs[i],
+                          f"{name}_2frame_aug_img_k_{i}", out_path_flo)
             if img1 is not None:
                 # draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, img1[i], out_path_flo, color, f"{name}_1frame_{i}", 0)
                 draw_points_onegrid(q_x_tmp, q_y_tmp, img1[i], out_path_flo, color[0], f"{name}_1frame_{i}", 0)
+                draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, img1[i],
+                              f"{name}_1frame_aug_img_{i}", out_path_flo)
             if img2 is not None:
                 # draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, img2[i],
                 #             out_path_flo, color, f"{name}_2frame_{i}", 0)
                 draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, img2[i], out_path_flo, color[1], f"{name}_2frame_{i}", 0)
+                draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, img2[i],
+                              f"{name}_2frame_aug_img_{i}", out_path_flo)
             # if rank == 0:
             #     print(f"{i} q_x_tmp: {q_x_tmp.shape}", q_x_tmp.tolist())
             #     print(f"{i} q_y_tmp: {q_y_tmp.shape}", q_x_tmp.tolist())
