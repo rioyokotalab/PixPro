@@ -248,76 +248,50 @@ def draw_rects(img1, img2, coord_q, coord_k, colors, idx=0, out_root="./"):
     return [out_img1_img2, out_img1_img2.clone(), out_img1_img2.clone()], crop_imgs
 
 
-def create_colors(color_src, num=None):
+def create_colors(color_s=None, num=None, rgb="rgb"):
+    def color_code_to_rgb(color_code, rgb="rgb"):
+        if len(rgb) != 3:
+            rgb = "rgb"
+        if "r" not in rgb or "g" not in rgb or "b" not in rgb:
+            rgb = "rgb"
+        h = hex(color_code)
+        h = h[2:]
+        h = h.zfill(6)
+        color = []
+        for i in range(0, 6, 2):
+            c = int(h[i:i+2], 16)
+            color.append(c)
+        ans_color = color.copy()
+        for i, s in enumerate(rgb):
+            if s == "r":
+                ans_color[0] = color[i]
+            elif s == "g":
+                ans_color[1] = color[i]
+            elif s == "b":
+                ans_color[2] = color[i]
+        return tuple(ans_color)
+
+    def rgb_to_hex(rgb):
+        r, g, b = rgb
+        r, g, b = hex(r), hex(g), hex(b)
+        c = r[2:].zfill(2) + g[2:].zfill(2) + b[2:].zfill(2)
+        return int(c, 16)
+
+    if num is None:
+        num = 49
+    if color_s is None:
+        color_code = 1250067
+    else:
+        color_code = rgb_to_hex(color_s)
+
     color_list = []
-    s_color = list(color_src)
-    max_idx, min_idx = 0, 1
-    max_val = 255 - 50
-    min_c, max_c = s_color[min_idx], s_color[max_idx]
-    for i, c in enumerate(s_color):
-        if min_c > c:
-            min_idx = i
-            min_c = c
-        if max_c < c:
-            max_idx = i
-            max_c = c
-
-    if min_idx == max_idx:
-        min_idx = (max_idx + 1) % 3
-
-    if min_idx == 0:
-        if max_idx == 1:
-            mid_idx = 2
-        elif max_idx == 2:
-            mid_idx = 1
-    elif min_idx == 1:
-        if max_idx == 0:
-            mid_idx = 2
-        elif max_idx == 2:
-            mid_idx = 0
-    elif min_idx == 2:
-        if max_idx == 0:
-            mid_idx = 1
-        elif max_idx == 1:
-            mid_idx = 0
-
-    cnt_idx, i = 0, 0
-    while True:
-        while True:
-            while True:
-                # print(s_color, cnt_idx)
-                if s_color[mid_idx] > max_val:
-                    color_list.append(tuple(s_color))
-                    cnt_idx += 1
-                    break
-                color_list.append(tuple(s_color))
-                if cnt_idx == 0:
-                    s_color[mid_idx] = 100
-                s_color[mid_idx] += 50
-                s_color[mid_idx] %= 256
-                cnt_idx += 1
-                if num is not None and cnt_idx >= num:
-                    break
-            if s_color[min_idx] > max_val:
-                break
-            # s_color[mid_idx] = 0
-            s_color[mid_idx] = 100
-            s_color[min_idx] += 50
-            s_color[min_idx] %= 256
-            if num is not None and cnt_idx >= num:
-                break
-        s_color[min_idx] = 0
-        if i == 0:
-            s_color[max_idx] = 0
-        elif s_color[max_idx] > max_val:
-            break
-        # s_color[mid_idx] = 0
-        s_color[mid_idx] = 100
-        s_color[max_idx] += 50
-        s_color[max_idx] %= 256
-        i += 1
-        if num is not None and cnt_idx >= num:
-            break
+    for i in range(num):
+        color_code += 3500
+        # color_code += 150
+        if color_code > 16250870:
+            color_code -= 15527148
+        c = color_code_to_rgb(color_code, rgb)
+        color_list.append(c)
 
     return color_list
 
