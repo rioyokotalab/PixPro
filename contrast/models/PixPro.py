@@ -260,8 +260,9 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         pos_masks = (dist_center < pos_ratio)
         if out_path_pos is None:
             out_path_pos = out_path_center
-        debug_utils.draw_point_positive_pair(q_x, q_y, k_x, k_y, img1, img2,
-                                             out_path_pos, color, pos_masks,
+        debug_utils.draw_point_positive_pair(q_x, q_y, k_x, k_y, center_q_x,
+                                             center_q_y, center_k_x, center_k_y,
+                                             img1, img2, out_path_pos, color, pos_masks,
                                              "plot_point_positive", 4,
                                              (q_bin_width * (W_orig - 1)),
                                              (k_bin_width * (W_orig - 1)),

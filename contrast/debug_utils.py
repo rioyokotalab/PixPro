@@ -404,12 +404,15 @@ def draw_points(q_x, q_y, k_x, k_y, img_src, out_path, color, name="plot_point",
         img.save(os.path.join(out_path, f"{name}_{idx}.png"))
 
 
-def draw_point_positive_pair(q_x, q_y, k_x, k_y, img1_src, img2_src, out_path, color_s,
+def draw_point_positive_pair(q_x, q_y, k_x, k_y, q_x_final, q_y_final, k_x_final,
+                             k_y_final, img1_src, img2_src, out_path, color_s,
                              pos_masks, name="plot_point_positive", width=4,
                              q_bin_width=None, k_bin_width=None, q_bin_height=None,
                              k_bin_height=None):
     q_grids = make_grid(q_x, q_y)
     k_grids = make_grid(k_x, k_y)
+    q_grids_final = make_grid(q_x_final, q_y_final)
+    k_grids_final = make_grid(k_x_final, k_y_final)
     im1 = adjust_img_dim(img1_src)
     im2 = adjust_img_dim(img2_src)
     nb, c, h, w = q_grids.shape
@@ -417,10 +420,16 @@ def draw_point_positive_pair(q_x, q_y, k_x, k_y, img1_src, img2_src, out_path, c
     k_grids = k_grids.permute(0, 2, 3, 1)
     q_grids = q_grids.view(nb, h * w, 1, c).repeat(1, 1, h * w, 1)
     k_grids = k_grids.view(nb, 1, h * w, c).repeat(1, h * w, 1, 1)
+    q_grids_final = q_grids_final.permute(0, 2, 3, 1)
+    k_grids_final = k_grids_final.permute(0, 2, 3, 1)
+    q_grids_final = q_grids_final.view(nb, h * w, 1, c).repeat(1, 1, h * w, 1)
+    k_grids_final = k_grids_final.view(nb, 1, h * w, c).repeat(1, h * w, 1, 1)
     color_list = create_colors(color_s[0])
     # color_list = color_s[0]
 
     for idx, (orig_im1, orig_im2, q_grid, k_grid, pos_mask) in enumerate(zip(im1, im2, q_grids, k_grids, pos_masks)):
+        q_grid_final = q_grids_final[idx]
+        k_grid_final = k_grids_final[idx]
         l_out_path = os.path.join(out_path, f"batch_{idx}")
         os.makedirs(l_out_path, exist_ok=True)
 
@@ -429,15 +438,30 @@ def draw_point_positive_pair(q_x, q_y, k_x, k_y, img1_src, img2_src, out_path, c
         img_all = get_concat_h(img1_all, img2_all)
         img_all.save(os.path.join(out_path, f"{name}_{idx}.png"))
 
+        def get_tmp_color(color):
+            if color[0] == 255:
+                color_tmp = (255, 153, 153)
+            elif color[1] == 255:
+                color_tmp = (153, 255, 153)
+            elif color[2] == 255:
+                color_tmp = (153, 153, 255)
+            return color_tmp
+
+        color_tmp = [get_tmp_color(c) for c in color_s]
+
         for jdx, (q_g, k_g, p_mask) in enumerate(zip(q_grid, k_grid, pos_mask)):
             l_q_grid = q_g[0]
             l_k_grid = k_g[p_mask]
+            l_q_grid_final = q_grid_final[jdx][0]
+            l_k_grid_final = k_grid_final[jdx][p_mask]
             img1 = draw_point_simple(orig_im1, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
             img2 = draw_point_simple(orig_im2, l_k_grid, color_s[0], width, k_bin_width[idx], k_bin_height[idx])
-            img3 = draw_point_simple(orig_im1, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
-            img4 = draw_point_simple(orig_im2, l_k_grid, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
-            img3 = draw_point_simple(img3, l_k_grid, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
-            img4 = draw_point_simple(img4, l_q_grid, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            img3 = draw_point_simple(orig_im2, l_q_grid, color_tmp[0], width, q_bin_width[idx], q_bin_height[idx])
+            img4 = draw_point_simple(orig_im2, l_k_grid, color_tmp[1], width, k_bin_width[idx], k_bin_height[idx])
+            img3 = draw_point_simple(img3, l_q_grid_final, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
+            img4 = draw_point_simple(img4, l_k_grid_final, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
+            img3 = draw_point_simple(img3, l_k_grid_final, color_s[1], width, k_bin_width[idx], k_bin_height[idx])
+            img4 = draw_point_simple(img4, l_q_grid_final, color_s[0], width, q_bin_width[idx], q_bin_height[idx])
             # img1 = draw_point_simple(orig_im1, l_q_grid[0], color_s[0], width, q_bin_width[idx], q_bin_height[idx])
             # img2 = draw_point_simple(orig_im2, l_k_grid[0], color_s[0], width, k_bin_width[idx], k_bin_height[idx])
             img = get_concat_h(img1, img2)
