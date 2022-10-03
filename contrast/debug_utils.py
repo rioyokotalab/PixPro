@@ -726,6 +726,10 @@ def main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
             draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, flo_img_mask, out_path_flo, color, f"{name}_on_flo_img_mask", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
             draw_points_onegrid(q_x_flow, q_y_flow, flo_img, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img", 4, int_q_bin_width, int_q_bin_height)
             draw_points_onegrid(q_x_flow, q_y_flow, flo_img_mask, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img_mask", 4, int_q_bin_width, int_q_bin_height)
+            draw_points(q_x, q_y, k_x, k_y, flo_img, out_path_flo, color, f"{name}_on_flo_img_noflowgrid", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+            draw_points(q_x, q_y, k_x, k_y, flo_img_mask, out_path_flo, color, f"{name}_on_flo_img_mask_noflowgrid", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+            draw_points_onegrid(q_x, q_y, flo_img, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img_noflowgrid", 4, int_q_bin_width, int_q_bin_height)
+            draw_points_onegrid(q_x, q_y, flo_img_mask, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img_mask_noflowgrid", 4, int_q_bin_width, int_q_bin_height)
 
     # check optical flow
     # draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
