@@ -129,8 +129,8 @@ def apply_optical_flow(data, flow_model, args):
     # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
-    flow_fwd = [flow_fwd, size]
-    flow_bwd = [flow_bwd, size]
+    flow_fwd = [flow_fwd, size, None]
+    flow_bwd = [flow_bwd, size, None]
     return flow_fwd, flow_bwd
 
 

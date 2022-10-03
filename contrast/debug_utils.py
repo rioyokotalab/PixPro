@@ -470,6 +470,65 @@ def draw_point_positive_pair(q_x, q_y, k_x, k_y, q_x_final, q_y_final, k_x_final
             img.save(os.path.join(l_out_path, f"{name}_{jdx}.png"))
 
 
+def warp(im2, flo, mask=None, out_root="./", name="flow_warp_img2_to_img1"):
+    """
+    warp an image/tensor (im2) back to im1, according to the optical flow
+    im2: [B, C, H, W] (im2)
+    flo: [B, 2, H, W] flow
+    """
+    B, C, H, W = im2.size()
+    im2_copy = im2.clone()
+    # mesh grid
+    xx = torch.arange(0, W).view(1, -1).repeat(H, 1)
+    yy = torch.arange(0, H).view(-1, 1).repeat(1, W)
+    xx = xx.view(1, 1, H, W).repeat(B, 1, 1, 1)
+    yy = yy.view(1, 1, H, W).repeat(B, 1, 1, 1)
+    grid = torch.cat((xx, yy), 1).float()
+
+    if flo.is_cuda or im2_copy.is_cuda:
+        if flo.is_cuda:
+            im2_copy = im2_copy.to(flo.device)
+            grid = grid.to(flo.device)
+        else:
+            flo = flo.to(im2_copy.device)
+            grid = grid.to(im2_copy.device)
+
+    im2_copy = im2_copy.to(grid.dtype)
+
+    vgrid = grid + flo
+    # scale grid to [-1,1]
+    vgrid[:, 0, :, :] = 2.0 * vgrid[:, 0, :, :].clone() / max(W - 1, 1) - 1.0
+    vgrid[:, 1, :, :] = 2.0 * vgrid[:, 1, :, :].clone() / max(H - 1, 1) - 1.0
+
+    vgrid = vgrid.permute(0, 2, 3, 1)
+    output = F.grid_sample(im2_copy - 255, vgrid, align_corners=True)
+    output = output + 255
+    output = output.detach().cpu().to(torch.uint8)
+
+    for i, o in enumerate(output):
+        output_img = transforms.ToPILImage(mode="RGB")(o)
+        output_img.save(os.path.join(out_root, f"{name}_{i}_orig.png"))
+
+    if mask is not None:
+        mask_rev = torch.logical_not(mask)
+        out_mask = output.clone()
+        out_mask = out_mask.permute(0, 2, 3, 1)
+        out_mask[mask_rev] = 255
+        out_mask = out_mask.permute(0, 3, 1, 2)
+        for i, o in enumerate(out_mask):
+            out_mask_img = transforms.ToPILImage(mode="RGB")(o)
+            out_mask_img.save(os.path.join(out_root, f"{name}_{i}_mask.png"))
+    else:
+        out_mask = None
+    # mask = torch.ones(im2.size()).to(DEVICE)
+    # mask = F.grid_sample(mask, vgrid)
+
+    # mask[mask < 0.999] = 0
+    # mask[mask > 0] = 1
+
+    return output, out_mask
+
+
 def draw_warp_img(grid_x, grid_y, W_orig, H_orig, img_src, name, out_path, mask_src=None):
     grid = torch.stack([grid_x, grid_y]).unsqueeze(0)
     grid[:, 0] = grid[:, 0] / (W_orig - 1)
@@ -498,16 +557,20 @@ def draw_warp_img(grid_x, grid_y, W_orig, H_orig, img_src, name, out_path, mask_
 
     if mask_src is not None:
         mask = mask_src.clone()
-        mask = torch.logical_not(mask.unsqueeze(0))
+        if mask.ndim == 4:
+            nb, c, h, w = mask.shape
+            mask = mask.reshape(nb, h, w)
+        mask = torch.logical_not(mask)
+        of_img_copy = of_img.clone()
         # orig_img_copy = orig_img_copy.permute(0, 2, 3, 1)
         # orig_img_copy[mask] = 0.0
         # orig_img_copy = orig_img_copy.permute(0, 3, 1, 2)
         # pil_orig_img = transforms.ToPILImage(mode="RGB")(orig_img_copy.squeeze(0))
         # pil_orig_img.save(os.path.join(out_path, f"{name}_orig_mask.png"))
-        of_img = of_img.permute(0, 2, 3, 1)
-        of_img[mask] = 255
-        of_img = of_img.permute(0, 3, 1, 2)
-        pil_of_img = transforms.ToPILImage(mode="RGB")(of_img.squeeze(0))
+        of_img_copy = of_img_copy.permute(0, 2, 3, 1)
+        of_img_copy[mask] = 255
+        of_img_copy = of_img_copy.permute(0, 3, 1, 2)
+        pil_of_img = transforms.ToPILImage(mode="RGB")(of_img_copy.squeeze(0))
         pil_of_img.save(os.path.join(out_path, f"{name}_mask.png"))
     # save_image((of_img * 255), os.path.join(out_path, f"{name}2.png"))
     # rank = torch.distributed.get_rank()
@@ -521,7 +584,7 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
                     k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
                     W, H, W_orig, H_orig, test_imgs, img1, img2, out_path, color,
                     name, is_center=False, flow_fwd=None, out_path_flo="",
-                    add_optical_flow=None):
+                    add_optical_flow=None, mask=None):
     is_calc_flow = flow_fwd is not None and add_optical_flow is not None
     size = (H_orig, W_orig)
     # rank = torch.distributed.get_rank()
@@ -587,24 +650,26 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
 
         if is_calc_flow:
             l_flow_fwd = flow_fwd[i].unsqueeze(0)
+            l_mask = None if mask is None else mask[i].unsqueeze(0)
             l_center_q_x_tmp = center_q_x_tmp.unsqueeze(0)
             l_center_q_y_tmp = center_q_y_tmp.unsqueeze(0)
-            q_x_tmp, q_y_tmp = add_optical_flow(l_flow_fwd, l_center_q_x_tmp,
-                                                l_center_q_y_tmp, size)
+            q_x_tmp, q_y_tmp, mask_fwd = add_optical_flow(l_flow_fwd, l_center_q_x_tmp,
+                                                          l_center_q_y_tmp, size,
+                                                          l_mask)
             q_x_tmp = q_x_tmp.squeeze(0)
             q_y_tmp = q_y_tmp.squeeze(0)
             draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path_flo, color, f"{name}_{i}", 0)
             draw_points_onegrid(center_q_x_tmp, center_q_y_tmp, test_imgs[i], out_path_flo, color[0], f"{name}_1frame_on_2frame_{i}", 0)
             draw_points_onegrid(center_k_x_tmp, center_k_y_tmp, test_imgs[i], out_path_flo, color[1], f"{name}_2frame_on_2frame_{i}", 0)
             draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, test_imgs[i],
-                          f"{name}_2frame_aug_img_q_{i}", out_path_flo)
+                          f"{name}_2frame_aug_img_q_{i}", out_path_flo, mask_fwd)
             draw_warp_img(center_k_x_tmp, center_k_y_tmp, W_orig, H_orig, test_imgs[i],
                           f"{name}_2frame_aug_img_k_{i}", out_path_flo)
             if img1 is not None:
                 # draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, img1[i], out_path_flo, color, f"{name}_1frame_{i}", 0)
                 draw_points_onegrid(q_x_tmp, q_y_tmp, img1[i], out_path_flo, color[0], f"{name}_1frame_{i}", 0)
                 draw_warp_img(center_q_x_tmp, center_q_y_tmp, W_orig, H_orig, img1[i],
-                              f"{name}_1frame_aug_img_{i}", out_path_flo)
+                              f"{name}_1frame_aug_img_{i}", out_path_flo, mask_fwd)
             if img2 is not None:
                 # draw_points(q_x_tmp, q_y_tmp, center_k_x_tmp, center_k_y_tmp, img2[i],
                 #             out_path_flo, color, f"{name}_2frame_{i}", 0)
@@ -616,9 +681,62 @@ def draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
             #     print(f"{i} q_y_tmp: {q_y_tmp.shape}", q_x_tmp.tolist())
             #     print(f"{i} center_k_x_tmp: {center_k_x_tmp.shape}", center_k_x_tmp.tolist())
             #     print(f"{i} center_k_y_tmp: {center_k_y_tmp.shape}", center_k_x_tmp.tolist())
-            mask = None
             draw_warp_img(q_x_tmp, q_y_tmp, W_orig, H_orig, test_imgs[i],
-                          f"{name}_2frame_to_1frame_img_{i}_flo", out_path_flo, mask)
+                          f"{name}_2frame_to_1frame_img_{i}_flo", out_path_flo,
+                          mask_fwd)
+
+
+def main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
+                         q_bin_width, q_bin_height, k_bin_width, k_bin_height, q_grids,
+                         k_grids, q_x, q_y, k_x, k_y, test_imgs, img1, img2,
+                         out_path, color, W_orig, H_orig,
+                         q_x_flow=None, q_y_flow=None, k_x_flow=None, k_y_flow=None,
+                         flow_fwd=None, out_path_flo="", add_optical_flow=None,
+                         mask=None, name="plot_point", is_center=True):
+    H, W = q_x.shape[-2:]
+    is_plot_flow = q_x_flow is not None
+    is_warp_flow = flow_fwd is not None
+    int_q_bin_width = q_bin_width * (W_orig - 1)
+    int_q_bin_height = q_bin_height * (H_orig - 1)
+    int_k_bin_width = k_bin_width * (W_orig - 1)
+    int_k_bin_height = k_bin_height * (H_orig - 1)
+
+    draw_points(q_x, q_y, k_x, k_y, test_imgs, out_path, color, f"{name}", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+    draw_points_onegrid(q_x, q_y, test_imgs, out_path, color[0], f"{name}_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
+    if img1 is not None:
+        draw_points(q_x, q_y, k_x, k_y, img1, out_path, color, f"{name}_on_1frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+        draw_points_onegrid(q_x, q_y, img1, out_path, color[0], f"{name}_1frame", 4, int_q_bin_width, int_q_bin_height)
+    if img2 is not None:
+        draw_points(q_x, q_y, k_x, k_y, img2, out_path, color, f"{name}_on_2frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+        draw_points_onegrid(k_x, k_y, img2, out_path, color[1], f"{name}_2frame", 4, int_k_bin_width, int_k_bin_height)
+
+    if is_plot_flow:
+        draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, test_imgs, out_path_flo, color, f"{name}", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+        # draw_points(q_x_flow[mask], q_y_flow[mask], k_x_flow, k_y_flow, test_imgs, out_path_flo, color)
+        draw_points_onegrid(q_x_flow, q_y_flow, test_imgs, out_path_flo, color[0], f"{name}_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
+        if img1 is not None:
+            draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, img1, out_path_flo, color, f"{name}_on_1frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+            draw_points_onegrid(q_x_flow, q_y_flow, img1, out_path_flo, color[0], f"{name}_1frame", 4, int_q_bin_width, int_q_bin_height)
+        if img2 is not None:
+            draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, img2, out_path_flo, color, f"{name}_on_2frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+            draw_points_onegrid(k_x_flow, k_y_flow, img2, out_path_flo, color[1], f"{name}_2frame", 4, int_k_bin_width, int_k_bin_height)
+        if is_warp_flow:
+            flo_img, flo_img_mask = warp(test_imgs, flow_fwd, mask, out_path_flo)
+            draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, flo_img, out_path_flo, color, f"{name}_on_flo_img", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+            draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, flo_img_mask, out_path_flo, color, f"{name}_on_flo_img_mask", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
+            draw_points_onegrid(q_x_flow, q_y_flow, flo_img, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img", 4, int_q_bin_width, int_q_bin_height)
+            draw_points_onegrid(q_x_flow, q_y_flow, flo_img_mask, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img_mask", 4, int_q_bin_width, int_q_bin_height)
+
+    # check optical flow
+    # draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
+    #                 k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
+    #                 W, H, W_orig, H_orig, test_imgs, img1, img2, out_path_center,
+    #                 color, f"of_{name}", is_center)
+    draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
+                    k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
+                    W, H, W_orig, H_orig, test_imgs, img1, img2, out_path,
+                    color, f"of_{name}", is_center, flow_fwd, out_path_flo,
+                    add_optical_flow, mask)
 
 
 def debug_calc_grid(x_array, y_array, q_start_x, q_start_y, k_start_x, k_start_y,
@@ -627,84 +745,33 @@ def debug_calc_grid(x_array, y_array, q_start_x, q_start_y, k_start_x, k_start_y
                     out_path, out_path_center, color, W_orig, H_orig,
                     center_q_x=None, center_q_y=None, center_k_x=None, center_k_y=None,
                     flow_fwd=None, out_path_flo="", out_path_center_flo="",
-                    add_optical_flow=None):
+                    add_optical_flow=None, mask=None):
     H, W = x_array.shape[-2:]
-    is_plot_flow = center_q_x is not None
     is_calc_flow = add_optical_flow is not None
 
     # debug
-    int_q_bin_width = q_bin_width * (W_orig - 1)
-    int_q_bin_height = q_bin_height * (H_orig - 1)
-    int_k_bin_width = k_bin_width * (W_orig - 1)
-    int_k_bin_height = k_bin_height * (H_orig - 1)
-    draw_points(q_x, q_y, k_x, k_y, test_imgs, out_path_center, color, "plot_point", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-    draw_points_onegrid(q_x, q_y, test_imgs, out_path_center_flo, color[0], "plot_point_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
-    if img1 is not None:
-        draw_points(q_x, q_y, k_x, k_y, img1, out_path_center, color, "plot_point_on_1frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-        draw_points_onegrid(q_x, q_y, img1, out_path_center, color[0], "plot_point_1frame", 4, int_q_bin_width, int_q_bin_height)
-    if img2 is not None:
-        draw_points(q_x, q_y, k_x, k_y, img2, out_path_center, color, "plot_point_on_2frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-        draw_points_onegrid(k_x, k_y, img2, out_path_center, color[1], "plot_point_2frame", 4, int_k_bin_width, int_k_bin_height)
-
-    if is_plot_flow:
-        draw_points(center_q_x, center_q_y, center_k_x, center_k_y, test_imgs, out_path_center_flo, color, "plot_point", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-        # draw_points(center_q_x[mask], center_q_y[mask], center_k_x, center_k_y, test_imgs, out_path_center_flo, color)
-        draw_points_onegrid(center_q_x, center_q_y, test_imgs, out_path_center_flo, color[0], "plot_point_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
-        if img1 is not None:
-            draw_points(center_q_x, center_q_y, center_k_x, center_k_y, img1, out_path_center_flo, color, "plot_point_on_1frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-            draw_points_onegrid(center_q_x, center_q_y, img1, out_path_center_flo, color[0], "plot_point_1frame", 4, int_q_bin_width, int_q_bin_height)
-        if img2 is not None:
-            draw_points(center_q_x, center_q_y, center_k_x, center_k_y, img2, out_path_center_flo, color, "plot_point_on_2frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-            draw_points_onegrid(center_k_x, center_k_y, img2, out_path_center_flo, color[1], "plot_point_2frame", 4, int_k_bin_width, int_k_bin_height)
-
-    # check optical flow
-    # draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
-    #                 k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
-    #                 W, H, W_orig, H_orig, test_imgs, img1, img2, out_path_center,
-    #                 color, "of_plot_point", True)
-    draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
-                    k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
-                    W, H, W_orig, H_orig, test_imgs, img1, img2, out_path_center,
-                    color, "of_plot_point", True, flow_fwd, out_path_center_flo,
-                    add_optical_flow)
-
+    main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
+                         q_bin_width, q_bin_height, k_bin_width, k_bin_height, q_grids,
+                         k_grids, q_x, q_y, k_x, k_y, test_imgs, img1, img2,
+                         out_path_center, color, W_orig, H_orig,
+                         center_q_x, center_q_y, center_k_x, center_k_y,
+                         flow_fwd, out_path_center_flo, add_optical_flow,
+                         mask, name="plot_point", is_center=True)
     # debug no center
     out_grids = calc_grid_no_center(x_array, y_array, q_bin_width, q_bin_height,
                                     k_bin_width, k_bin_height, q_start_x, q_start_y,
                                     k_start_x, k_start_y, W_orig, H_orig)
     q_x_n, q_y_n, k_x_n, k_y_n = out_grids
-    draw_points(q_x_n, q_y_n, k_x_n, k_y_n, test_imgs, out_path, color, "plot_point", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-    draw_points_onegrid(q_x_n, q_y_n, test_imgs, out_path, color[0], "plot_point_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
-    if img1 is not None:
-        draw_points(q_x_n, q_y_n, k_x_n, k_y_n, img1, out_path, color, "plot_point_on_1frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-        draw_points_onegrid(q_x_n, q_y_n, img1, out_path, color[0], "plot_point_1frame", 4, int_q_bin_width, int_q_bin_height)
-    if img2 is not None:
-        draw_points(q_x_n, q_y_n, k_x_n, k_y_n, img2, out_path, color, "plot_point_on_2frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-        draw_points_onegrid(k_x_n, k_y_n, img2, out_path, color[0], "plot_point_2frame", 4, int_k_bin_width, int_k_bin_height)
-
     if is_calc_flow:
         size = (H_orig, W_orig)
-        center_q_x_n, center_q_y_n = add_optical_flow(flow_fwd, q_x_n, q_y_n, size)
+        center_q_x_n, center_q_y_n, mask_fwd = add_optical_flow(flow_fwd, q_x_n, q_y_n,
+                                                                size, mask)
         center_k_x_n, center_k_y_n = k_x_n.clone(), k_y_n.clone()
-        draw_points(center_q_x_n, center_q_y_n, center_k_x_n, center_k_y_n, test_imgs, out_path_flo, color, "plot_point", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-        draw_points_onegrid(center_q_x_n, center_q_y_n, test_imgs, out_path, color[0], "plot_point_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
-        # draw_points(center_q_x[mask], center_q_y[mask], center_k_x, center_k_y, test_imgs, out_path_flo, color)
-        if img1 is not None:
-            draw_points(center_q_x_n, center_q_y_n, center_k_x_n, center_k_y_n, img1, out_path_flo, color, "plot_point_on_1frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-            draw_points_onegrid(center_q_x_n, center_q_y_n, img1, out_path, color[0], "plot_point_1frame", 4, int_q_bin_width, int_q_bin_height)
-            # draw_points(center_q_x[mask], center_q_y[mask], center_k_x, center_k_y, img1, out_path_flo, color, "plot_point_1frame")
-        if img2 is not None:
-            draw_points(center_q_x_n, center_q_y_n, center_k_x_n, center_k_y_n, img2, out_path_flo, color, "plot_point_2frame", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
-            draw_points_onegrid(center_k_x_n, center_k_y_n, img2, out_path, color[0], "plot_point_2frame", 4, int_k_bin_width, int_k_bin_height)
-            # draw_points(center_q_x[mask], center_q_y[mask], center_k_x, center_k_y, img2, out_path_flo, color, "plot_point_2frame")
 
-    # check optical flow
-    # draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
-    #                 k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
-    #                 W, H, W_orig, H_orig, test_imgs, img1, img2, out_path,
-    #                 color, "of_plot_point", False)
-    draw_points_all(q_grids, k_grids, q_bin_width, q_bin_height, k_bin_width,
-                    k_bin_height, q_start_x, q_start_y, k_start_x, k_start_y,
-                    W, H, W_orig, H_orig, test_imgs, img1, img2, out_path,
-                    color, "of_plot_point", False, flow_fwd, out_path_flo,
-                    add_optical_flow)
+    main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
+                         q_bin_width, q_bin_height, k_bin_width, k_bin_height, q_grids,
+                         k_grids, q_x_n, q_y_n, k_x_n, k_y_n, test_imgs, img1, img2,
+                         out_path, color, W_orig, H_orig,
+                         center_q_x_n, center_q_y_n, center_k_x_n, center_k_y_n,
+                         flow_fwd, out_path_flo, add_optical_flow,
+                         mask, name="plot_point", is_center=False)

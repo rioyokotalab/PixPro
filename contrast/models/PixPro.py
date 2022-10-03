@@ -43,7 +43,7 @@ class MLP2d(nn.Module):
         return x
 
 
-def add_optical_flow(flow, x_grid, y_grid, size, verbose=False):
+def add_optical_flow(flow, x_grid, y_grid, size, mask=None, verbose=False):
     H, W = x_grid.shape[-2:]
     H_in, W_in = flow.shape[-2:]
     H_orig, W_orig = size
@@ -62,6 +62,7 @@ def add_optical_flow(flow, x_grid, y_grid, size, verbose=False):
     y = 2 * (y / (H_orig - 1)) - 1
     grid = torch.stack([x, y]).permute(1, 0, 2, 3)
     flow_grid = F.grid_sample(flow, grid.permute(0, 2, 3, 1), align_corners=True)
+    mask_grid = None
 
     out_x = x_grid.clone()
     out_y = y_grid.clone()
@@ -78,7 +79,7 @@ def add_optical_flow(flow, x_grid, y_grid, size, verbose=False):
     # out_y = 2 * (out_y / (H_orig - 1)) - 1
     # out_x = out_x / (W_orig - 1)
     # out_y = out_y / (H_orig - 1)
-    return out_x, out_y
+    return out_x, out_y, mask_grid
 
 
 def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
@@ -97,12 +98,13 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         k, out_root = k
 
     is_calc_flow = isinstance(coord_q, list)
+    mask = None
     if is_calc_flow:
         coord_q, flow_fwd = coord_q
         coord_k, flow_bwd = coord_k
         if isinstance(flow_fwd, list):
-            flow_fwd, size = flow_fwd
-            flow_bwd, _ = flow_bwd
+            flow_fwd, size, mask = flow_fwd
+            flow_bwd, _, _ = flow_bwd
             if isinstance(size, torch.Tensor):
                 H_orig, W_orig = int(size[0].item()), int(size[1].item())
                 size = (H_orig, W_orig)
@@ -136,8 +138,10 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     k_start_x = coord_k[:, 0].view(-1, 1, 1)
     k_start_y = coord_k[:, 1].view(-1, 1, 1)
 
-    debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
-                            q_bin_height, k_bin_width, k_bin_height, q_grids, k_grids)
+    if is_debug:
+        debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
+                                q_bin_height, k_bin_width, k_bin_height, q_grids,
+                                k_grids)
     # [bs, 1, 1]
     # q_flip_x = (coord_q[:, 0] > coord_q[:, 2]).view(-1, 1, 1)
     # q_flip_y = (coord_q[:, 1] > coord_q[:, 3]).view(-1, 1, 1)
@@ -223,7 +227,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         q_y = q_y * (H_orig - 1)
         k_x = k_x * (W_orig - 1)
         k_y = k_y * (H_orig - 1)
-        center_q_x, center_q_y = add_optical_flow(flow_fwd, q_x, q_y, size)
+        center_q_x, center_q_y, mask_fwd = add_optical_flow(flow_fwd, q_x, q_y, size, mask)
         center_k_x, center_k_y = k_x.clone(), k_y.clone()
 
         if is_debug:
@@ -238,7 +242,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
                                         W_orig, H_orig,
                                         center_q_x, center_q_y, center_k_x, center_k_y,
                                         flow_fwd, out_path_flo, out_path_center_flo,
-                                        add_optical_flow)
+                                        add_optical_flow, mask)
         # center_q_x, center_q_y = q_x.clone(), q_y.clone()
         # center_k_x, center_k_y = add_optical_flow(flow_fwd, q_x, q_y, size)
 
@@ -247,7 +251,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     #                         q_bin_diag=q_bin_diag, k_bin_diag=k_bin_diag,
     #                         max_bin_diag=max_bin_diag, center_q_x=center_q_x,
     #                         center_q_y=center_q_y, center_k_x=center_k_x,
-    #                         # q_flipx=q_flip_x, q_flip_y=q_flip_y,
+    #                         # q_flip_x=q_flip_x, q_flip_y=q_flip_y,
     #                         # k_flip_x=k_flip_x, k_flip_y=k_flip_y,
     #                         center_k_y=center_k_y)
 
