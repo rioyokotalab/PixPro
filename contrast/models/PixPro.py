@@ -62,7 +62,14 @@ def add_optical_flow(flow, x_grid, y_grid, size, mask=None, verbose=False):
     y = 2 * (y / (H_orig - 1)) - 1
     grid = torch.stack([x, y]).permute(1, 0, 2, 3)
     flow_grid = F.grid_sample(flow, grid.permute(0, 2, 3, 1), align_corners=True)
-    mask_grid = None
+    if mask is not None:
+        mask_grid = mask.clone()
+        mask_grid = mask_grid.unsqueeze(0).permute(1, 0, 2, 3).float()
+        mask_grid = F.grid_sample(mask_grid, grid.permute(0, 2, 3, 1), mode='nearest',
+                                  align_corners=True)
+        mask_grid = mask_grid.to(torch.bool)
+    else:
+        mask_grid = None
 
     out_x = x_grid.clone()
     out_y = y_grid.clone()
@@ -258,10 +265,14 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
                              + (center_q_y.view(-1, H * W, 1) - center_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
-    pos_mask = (dist_center < pos_ratio).float().detach()
+    pos_mask = (dist_center < pos_ratio)
+    if mask_fwd is not None:
+        flow_mask = mask_fwd.view(-1, H * W, 1).repeat(1, 1, H * W)
+        pos_mask = pos_mask & flow_mask
+    pos_mask_f = pos_mask.float().detach()
 
     if is_debug:
-        pos_masks = (dist_center < pos_ratio)
+        pos_masks = pos_mask.clone()
         if out_path_pos is None:
             out_path_pos = out_path_center
         debug_utils.draw_point_positive_pair(q_x, q_y, k_x, k_y, center_q_x,
@@ -276,7 +287,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     # [bs, 49, 49]
     logit = torch.bmm(q.transpose(1, 2), k)
 
-    loss = (logit * pos_mask).sum(-1).sum(-1) / (pos_mask.sum(-1).sum(-1) + 1e-6)
+    loss = (logit * pos_mask_f).sum(-1).sum(-1) / (pos_mask_f.sum(-1).sum(-1) + 1e-6)
 
     return -2 * loss.mean()
 

@@ -129,8 +129,10 @@ def apply_optical_flow(data, flow_model, args):
     # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
-    flow_fwd = [flow_fwd, size, None]
-    flow_bwd = [flow_bwd, size, None]
+    _, _, mask_fwd = forward_backward_consistency(flow_fwd, flow_bwd, alpha_1=args.alpha1, alpha_2=args.alpha2)
+    _, _, mask_bwd = forward_backward_consistency(flow_bwd, flow_fwd, alpha_1=args.alpha1, alpha_2=args.alpha2)
+    flow_fwd = [flow_fwd, size, mask_fwd]
+    flow_bwd = [flow_bwd, size, mask_bwd]
     return flow_fwd, flow_bwd
 
 
@@ -139,34 +141,46 @@ def apply_optical_flow(data, flow_model, args):
 def forward_backward_consistency(flow_fwd, flow_bwd, coords0=None, alpha_1=0.01, alpha_2=0.5, is_norm=False):
     flow_fwd = flow_fwd.detach()
     flow_bwd = flow_bwd.detach()
-    # if is_norm:
-    #     flow_fwd_norm = flow_fwd.clone()
-    #     flow_bwd_norm = flow_bwd.clone()
-    #     flow_fwd = denormalize_flow(flow_fwd_norm)
-    #     flow_bwd = denormalize_flow(flow_bwd_norm)
-    # else:
-    #     flow_fwd_norm = normalize_flow(flow_fwd)
-    #     flow_bwd_norm = normalize_flow(flow_bwd)
+    if is_norm:
+        flow_fwd_norm = flow_fwd.clone()
+        flow_bwd_norm = flow_bwd.clone()
+        flow_fwd = denormalize_flow(flow_fwd_norm)
+        flow_bwd = denormalize_flow(flow_bwd_norm)
+    else:
+        flow_fwd_norm = normalize_flow(flow_fwd)
+        flow_bwd_norm = normalize_flow(flow_bwd)
 
     if coords0 is None:
         nb, _, ht, wd = flow_fwd.shape
         coords0 = torch.meshgrid(torch.arange(ht), torch.arange(wd))
         coords0 = torch.stack(coords0[::-1], dim=0).float().repeat(nb, 1, 1, 1).to(flow_fwd.device)
-        # coords0_norm = normalize_coord(coords0)
+        coords0_norm = normalize_coord(coords0)
 
-    coords1 = coords0 + flow_fwd
-    coords1_norm = normalize_coord(coords1)
-    # coords1_norm = coords0_norm + flow_fwd_norm
+    # coords1 = coords0 + flow_fwd
+    # coords1_norm = normalize_coord(coords1)
+    coords1_norm = coords0_norm + flow_fwd_norm
     mask = (torch.abs(coords1_norm[:, 0]) < 1) & (torch.abs(coords1_norm[:, 1]) < 1)
 
-    flow_bwd_interpolate = F.grid_sample(flow_bwd, coords1_norm.permute(0, 2, 3, 1), align_corners=True)
-    flow_cycle = flow_fwd + flow_bwd_interpolate
+    flow_bwd_interpolate_norm = F.grid_sample(flow_bwd_norm, coords1_norm.permute(0, 2, 3, 1), align_corners=True)
+    flow_cycle_norm = flow_fwd_norm + flow_bwd_interpolate_norm
+    flow_cycle_tmp = flow_cycle_norm.clone()
+    flow_bwd_interpolate_tmp = flow_bwd_interpolate_norm.clone()
+    flow_fwd_tmp = flow_fwd_norm.clone()
+    # flow_bwd_interpolate = F.grid_sample(flow_bwd, coords1_norm.permute(0, 2, 3, 1), align_corners=True)
+    # flow_cycle = flow_fwd + flow_bwd_interpolate
+    # flow_cycle_tmp = flow_cycle.clone()
+    # flow_bwd_interpolate_tmp = flow_bwd_interpolate.clone()
+    # flow_fwd_tmp = flow_fwd.clone()
 
-    flow_cycle_norm = (flow_cycle**2).sum(1)
-    eps = alpha_1 * ((flow_fwd**2).sum(1) + (flow_bwd_interpolate**2).sum(1)) + alpha_2
+    h, w = flow_fwd.shape[-2:]
+    h, w = torch.tensor(h), torch.tensor(w)
+    alpha_2 = alpha_2 / (torch.sqrt(h**2 + w**2).item())
 
-    mask = mask & ((flow_cycle_norm - eps) <= 0)
-    return coords0, coords1, mask
+    flow_cycle_abs_norm = (flow_cycle_tmp**2).sum(1)
+    eps = alpha_1 * ((flow_fwd_tmp**2).sum(1) + (flow_bwd_interpolate_tmp**2).sum(1)) + alpha_2
+
+    mask = mask & ((flow_cycle_abs_norm - eps) <= 0)
+    return coords0_norm, coords1_norm, mask
 
 
 @torch.no_grad()
