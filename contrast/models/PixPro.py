@@ -243,10 +243,9 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
             debug_utils.debug_calc_grid(x_array, y_array, q_start_x, q_start_y,
                                         k_start_x, k_start_y, q_bin_width,
                                         q_bin_height, k_bin_width, k_bin_height,
-                                        q_grids, k_grids, center_q_x, center_q_y,
-                                        center_k_x, center_k_y, test_imgs, img1,
-                                        img2, out_path, out_path_center, color,
-                                        W_orig, H_orig,
+                                        q_grids, k_grids, q_x, q_y, k_x, k_y,
+                                        test_imgs, img1, img2, out_path,
+                                        out_path_center, color, W_orig, H_orig,
                                         center_q_x, center_q_y, center_k_x, center_k_y,
                                         flow_fwd, out_path_flo, out_path_center_flo,
                                         add_optical_flow, mask)
