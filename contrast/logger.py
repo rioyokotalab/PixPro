@@ -99,6 +99,18 @@ def _cached_log_stream(filename):
 # for wandb log
 def get_wandb_name(args):
     wandb_name = "pretrain_"
+    if hasattr(args, "n_frames"):
+        wandb_name += f"nframe{args.n_frames}_"
+    if hasattr(args, "small"):
+        if args.small:
+            wandb_name += "small_"
+    if hasattr(args, "flow_up"):
+        if args.flow_up:
+            wandb_name += "flow-up_"
+    if hasattr(args, "alpha1"):
+        wandb_name += f"alpha1-{args.alpha1}_"
+    if hasattr(args, "alpha2"):
+        wandb_name += f"alpha2-{args.alpha2}_"
     wandb_name += f"crop-{args.crop}_"
     wandb_name += f"aug-{args.aug}_"
     wandb_name += f"{args.dataset}_"
