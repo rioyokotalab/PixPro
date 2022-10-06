@@ -9,6 +9,8 @@ from torchvision import transforms
 from PIL import ImageDraw
 from PIL import Image
 
+from contrast.flow import flow_viz
+
 
 def prepare_imgs(coord_q, coord_k):
     if isinstance(coord_q, tuple):
@@ -366,6 +368,57 @@ def adjust_img_dim(img_src):
     return img
 
 
+def adjust_dim(tar, out_dim=4):
+    if tar is None:
+        return None
+    assert isinstance(out_dim, int)
+    assert isinstance(tar, torch.Tensor)
+    in_dim = tar.ndim
+    num = out_dim - in_dim
+    out = tar.clone()
+    if num == 0:
+        return out
+    is_down_dim = num <= 0
+    for i in range(abs(num)):
+        if is_down_dim:
+            assert out.shape[0] == 1
+            out = out.squeeze(0)
+        else:
+            out = out.unsqueeze(0)
+    return out
+
+
+def apply_mask(img_src, mask_src=None, pad_v=255):
+    if mask_src is None or img_src is None:
+        return None
+    in_dim = img_src.ndim
+    mask = adjust_dim(mask_src, 3)
+    img = adjust_dim(img_src, 4)
+    mask_rev = torch.logical_not(mask)
+    img_mask = img.clone()
+    img_mask = img_mask.permute(0, 2, 3, 1)
+    img_mask[mask_rev] = pad_v
+    img_mask = img_mask.permute(0, 3, 1, 2)
+    img_mask = adjust_dim(img_mask, in_dim)
+    return img_mask
+
+
+def save_img_tensor(img_tensor, out_root, fname, ext="png"):
+    assert img_tensor is not None
+    assert out_root is not None
+    assert fname is not None and fname != ""
+    assert isinstance(img_tensor, torch.Tensor)
+    ndim = img_tensor.ndim
+    assert ndim == 3 or ndim == 4
+    out_name = os.path.join(out_root, fname)
+    img_copy = adjust_dim(img_tensor, 4)
+    num = img_copy.shape[0]
+    for i, img in enumerate(img_copy):
+        out_img = transforms.ToPILImage(mode="RGB")(img)
+        l_out_name = out_name if num == 1 else f"{out_name}_{i}"
+        out_img.save(f"{l_out_name}.{ext}")
+
+
 def draw_points_onegrid(x, y, img_src, out_path, color, name="plot_point", width=4, bin_width=None, bin_height=None):
     # print(color, "color in one grid")
     if isinstance(color, list):
@@ -505,19 +558,11 @@ def warp(im2, flo, mask=None, out_root="./", name="flow_warp_img2_to_img1"):
     output = output + 255
     output = output.detach().cpu().to(torch.uint8)
 
-    for i, o in enumerate(output):
-        output_img = transforms.ToPILImage(mode="RGB")(o)
-        output_img.save(os.path.join(out_root, f"{name}_{i}_orig.png"))
+    save_img_tensor(output, out_root, f"{name}_orig")
 
     if mask is not None:
-        mask_rev = torch.logical_not(mask)
-        out_mask = output.clone()
-        out_mask = out_mask.permute(0, 2, 3, 1)
-        out_mask[mask_rev] = 255
-        out_mask = out_mask.permute(0, 3, 1, 2)
-        for i, o in enumerate(out_mask):
-            out_mask_img = transforms.ToPILImage(mode="RGB")(o)
-            out_mask_img.save(os.path.join(out_root, f"{name}_{i}_mask.png"))
+        out_mask = apply_mask(output, mask, 255)
+        save_img_tensor(out_mask, out_root, f"{name}_mask")
     else:
         out_mask = None
     # mask = torch.ones(im2.size()).to(DEVICE)
@@ -545,33 +590,21 @@ def draw_warp_img(grid_x, grid_y, W_orig, H_orig, img_src, name, out_path, mask_
     orig_img_copy = orig_img_copy.detach().cpu()
     orig_img_copy = orig_img_copy.to(torch.uint8)
     of_img = of_img.to(torch.uint8)
-    # pil_of_img = transforms.ToPILImage(mode="RGB")(of_img.squeeze(0))
-    # pil_of_img = draw_rect_simple(of_img.squeeze(0), [], [])
-    # pil_of_img.save(os.path.join(out_path, f"{name}.png"))
+    # save_img_tensor(of_img, out_path, name)
     # save_image(orig_img_copy, os.path.join(out_path, f"{name}0.png"))
-    pil_orig_img = transforms.ToPILImage(mode="RGB")(orig_img_copy.squeeze(0))
-    pil_orig_img.save(os.path.join(out_path, f"{name}_orig.png"))
-    pil_of_img = transforms.ToPILImage(mode="RGB")(of_img.squeeze(0))
+    save_img_tensor(orig_img_copy, out_path, f"{name}_orig")
     # save_image(of_img, os.path.join(out_path, f"{name}.png"))
-    pil_of_img.save(os.path.join(out_path, f"{name}.png"))
+    save_img_tensor(of_img, out_path, name)
 
     if mask_src is not None:
         mask = mask_src.clone()
         if mask.ndim == 4:
             nb, c, h, w = mask.shape
             mask = mask.reshape(nb, h, w)
-        mask = torch.logical_not(mask)
-        of_img_copy = of_img.clone()
-        # orig_img_copy = orig_img_copy.permute(0, 2, 3, 1)
-        # orig_img_copy[mask] = 0.0
-        # orig_img_copy = orig_img_copy.permute(0, 3, 1, 2)
-        # pil_orig_img = transforms.ToPILImage(mode="RGB")(orig_img_copy.squeeze(0))
-        # pil_orig_img.save(os.path.join(out_path, f"{name}_orig_mask.png"))
-        of_img_copy = of_img_copy.permute(0, 2, 3, 1)
-        of_img_copy[mask] = 255
-        of_img_copy = of_img_copy.permute(0, 3, 1, 2)
-        pil_of_img = transforms.ToPILImage(mode="RGB")(of_img_copy.squeeze(0))
-        pil_of_img.save(os.path.join(out_path, f"{name}_mask.png"))
+        of_img_copy = apply_mask(of_img, mask, 255)
+        save_img_tensor(of_img_copy, out_path, f"{name}_mask")
+        # orig_img_copy = apply_mask(orig_img_copy, mask, 0.0)
+        # save_img_tensor(orig_img_copy, out_path, f"{name}_orig_mask")
     # save_image((of_img * 255), os.path.join(out_path, f"{name}2.png"))
     # rank = torch.distributed.get_rank()
     # if rank == 0:
@@ -701,6 +734,83 @@ def main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
     int_k_bin_width = k_bin_width * (W_orig - 1)
     int_k_bin_height = k_bin_height * (H_orig - 1)
 
+    def vizes(flos, name_viz=f"{name}_flo_cycle", mask_src=mask):
+        def viz(flo, img1, name, mask=None):
+            is_cat = img1 is not None
+            if is_cat:
+                img = img1.clone()
+                img = img.permute(1, 2, 0).cpu().numpy()
+            flo = flo.permute(1, 2, 0).cpu().numpy()
+
+            # map flow to rgb image
+            flo = flow_viz.flow_to_image(flo)
+
+            # # cv2 method(numpy)
+            # if is_cat:
+            #     img_flo = np.concatenate([img, flo], axis=0)
+
+            # import matplotlib.pyplot as plt
+            # plt.imshow(img_flo / 255.0)
+            # plt.show()
+            # if name != "":
+            #     fname = os.path.join(out_path_flo, f"{name}_cv2.png")
+            #     if is_cat:
+            #         cv2.imwrite(fname, img_flo[:, :, [2, 1, 0]])
+            #     else:
+            #         cv2.imwrite(fname, flo[:, :, [2, 1, 0]])
+
+            # cv2.imshow('image', img_flo[:, :, [2, 1, 0]] / 255.0)
+            # cv2.waitKey()
+
+            out_name = os.path.join(out_path_flo, f"{name}.png")
+            flo_img = torch.from_numpy(flo).permute(2, 0, 1)
+
+            flo_img_mask = apply_mask(flo_img, mask, 0)
+            if flo_img_mask is not None:
+                out_name_mask = os.path.join(out_path_flo, f"{name}_mask.png")
+                flo_img_mask_pil = transforms.ToPILImage(mode="RGB")(flo_img_mask)
+                if is_cat:
+                    img_pil_copy = img1.clone()
+                    img_pil_copy = transforms.ToPILImage(mode="RGB")(img_pil_copy)
+                    flo_img_mask_pil = get_concat_v(img_pil_copy, flo_img_mask_pil)
+                flo_img_mask_pil.save(out_name_mask)
+
+            flo_img_tmp = flo_img.clone()
+            flo_img_tmp = flo_img_tmp.detach().cpu().to(torch.uint8)
+            flo_img_tmp_img = transforms.ToPILImage(mode="RGB")(flo_img_tmp)
+            if is_cat:
+                img_pil = img1.clone()
+                img_pil = transforms.ToPILImage(mode="RGB")(img_pil)
+                flo_img_tmp_img = get_concat_v(img_pil, flo_img_tmp_img)
+            flo_img_tmp_img.save(out_name)
+            return flo_img, flo_img_mask
+
+        if flos is None:
+            return None
+
+        flos_copy = adjust_dim(flos, 4)
+        nb = flos.shape[0]
+        img1_copy = adjust_dim(img1, 4)
+        if img1_copy is None:
+            img1_copy = [None] * nb
+        if mask_src is None:
+            mask_src = [None] * nb
+        flo_img_list, flo_img_list_mask = [], []
+        for i, (l_flo, l_img, l_mask) in enumerate(zip(flos_copy, img1_copy, mask_src)):
+            l_flo_img, l_flo_img_mask = viz(l_flo, l_img, f"{name_viz}_{i}", l_mask)
+            flo_img_list.append(l_flo_img)
+            if l_flo_img_mask is not None:
+                flo_img_list_mask.append(l_flo_img_mask)
+        flo_imgs = torch.stack(flo_img_list)
+        if len(flo_img_list_mask) > 0:
+            flo_imgs_mask = torch.stack(flo_img_list_mask)
+        else:
+            flo_imgs_mask = None
+        return flo_imgs, flo_imgs_mask
+
+    if mask is not None and isinstance(mask, list):
+        mask, flo_cycle = mask
+
     draw_points(q_x, q_y, k_x, k_y, test_imgs, out_path, color, f"{name}", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
     draw_points_onegrid(q_x, q_y, test_imgs, out_path, color[0], f"{name}_1frame_on_2frame", 4, int_q_bin_width, int_q_bin_height)
     if img1 is not None:
@@ -722,6 +832,8 @@ def main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
             draw_points_onegrid(k_x_flow, k_y_flow, img2, out_path_flo, color[1], f"{name}_2frame", 4, int_k_bin_width, int_k_bin_height)
         if is_warp_flow:
             flo_img, flo_img_mask = warp(test_imgs, flow_fwd, mask, out_path_flo)
+            vizes(flo_cycle, f"{name}_flo_cycle", None)
+            vizes(flow_fwd, f"{name}_flo_fwd", mask)
             draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, flo_img, out_path_flo, color, f"{name}_on_flo_img", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
             draw_points(q_x_flow, q_y_flow, k_x_flow, k_y_flow, flo_img_mask, out_path_flo, color, f"{name}_on_flo_img_mask", 4, int_q_bin_width, int_q_bin_height, int_k_bin_width, int_k_bin_height)
             draw_points_onegrid(q_x_flow, q_y_flow, flo_img, out_path_flo, color[0], f"{name}_1frame_on_2frame_on_flo_img", 4, int_q_bin_width, int_q_bin_height)
@@ -752,6 +864,8 @@ def debug_calc_grid(x_array, y_array, q_start_x, q_start_y, k_start_x, k_start_y
                     add_optical_flow=None, mask=None):
     H, W = x_array.shape[-2:]
     is_calc_flow = add_optical_flow is not None
+    if mask is not None and isinstance(mask, list):
+        mask_fwd, _ = mask
 
     # debug
     main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,
@@ -769,7 +883,7 @@ def debug_calc_grid(x_array, y_array, q_start_x, q_start_y, k_start_x, k_start_y
     if is_calc_flow:
         size = (H_orig, W_orig)
         center_q_x_n, center_q_y_n, mask_fwd = add_optical_flow(flow_fwd, q_x_n, q_y_n,
-                                                                size, mask)
+                                                                size, mask_fwd)
         center_k_x_n, center_k_y_n = k_x_n.clone(), k_y_n.clone()
 
     main_debug_calc_grid(q_start_x, q_start_y, k_start_x, k_start_y,

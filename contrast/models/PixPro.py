@@ -115,6 +115,8 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
             if isinstance(size, torch.Tensor):
                 H_orig, W_orig = int(size[0].item()), int(size[1].item())
                 size = (H_orig, W_orig)
+            if isinstance(mask, list):
+                mask, flo_cycle = mask
         else:
             size = flow_fwd.shape[-2:]
     else:
@@ -248,7 +250,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
                                         out_path_center, color, W_orig, H_orig,
                                         center_q_x, center_q_y, center_k_x, center_k_y,
                                         flow_fwd, out_path_flo, out_path_center_flo,
-                                        add_optical_flow, mask)
+                                        add_optical_flow, [mask, flo_cycle])
         # center_q_x, center_q_y = q_x.clone(), q_y.clone()
         # center_k_x, center_k_y = add_optical_flow(flow_fwd, q_x, q_y, size)
 

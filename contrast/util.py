@@ -180,7 +180,7 @@ def forward_backward_consistency(flow_fwd, flow_bwd, coords0=None, alpha_1=0.01,
     eps = alpha_1 * ((flow_fwd_tmp**2).sum(1) + (flow_bwd_interpolate_tmp**2).sum(1)) + alpha_2
 
     mask = mask & ((flow_cycle_abs_norm - eps) <= 0)
-    return coords0_norm, coords1_norm, mask
+    return coords0_norm, coords1_norm, [mask, flow_cycle_tmp]
 
 
 @torch.no_grad()
