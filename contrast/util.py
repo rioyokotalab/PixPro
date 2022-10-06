@@ -139,6 +139,8 @@ def apply_optical_flow(data, flow_model, args):
 # implement: https://arxiv.org/pdf/1711.07837.pdf
 @torch.no_grad()
 def forward_backward_consistency(flow_fwd, flow_bwd, coords0=None, alpha_1=0.01, alpha_2=0.5, is_norm=False):
+    if alpha_1 is None or alpha_2 is None:
+        return flow_fwd.clone(), flow_bwd.clone(), [None, None]
     flow_fwd = flow_fwd.detach()
     flow_bwd = flow_bwd.detach()
     if is_norm:
@@ -208,3 +210,12 @@ def denormalize_flow(flow_norm):
     flow[:, 0] = (flow[:, 0] * (wd - 1)) / 2
     flow[:, 1] = (flow[:, 1] * (ht - 1)) / 2
     return flow
+
+
+@torch.no_grad()
+def calc_mask_ratio(mask):
+    if mask is None:
+        return None
+    mask_rev = torch.logical_not(mask)
+    r = mask_rev.float().mean(-1).mean(-1)
+    return r
