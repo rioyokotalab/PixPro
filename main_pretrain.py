@@ -26,6 +26,7 @@ from contrast.lars import add_weight_decay, LARS
 from contrast.flow import RAFT
 # from contrast.flow import InputPadder
 from contrast.util import apply_optical_flow
+from contrast import util
 
 try:
     # noinspection PyUnresolvedReferences
@@ -180,6 +181,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     """
     one epoch training
     """
+    is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
+    is_mask_flow = is_mask_flow and args.use_flow
+
     if args.use_flow:
         model, flow_model = model
         flow_model.eval()
@@ -199,12 +203,19 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]
 
+        if is_mask_flow:
+            mask_fwd, mask_bwd = flow_fwd[2][0], flow_bwd[2][0]
+            r_fwds = util.calc_mask_ratio(mask_fwd)
+            r_bwds = util.calc_mask_ratio(mask_bwd)
+            with torch.no_grad():
+                r_fwd, r_bwd = r_fwds.mean().item(), r_bwds.mean().item()
+
         if args.debug:
             data[2] = (data[2], [data[6], idx, epoch])
             data[3] = (data[3], [data[7], idx, epoch])
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
-        loss = model(data[0], data[1], data[2], data[3])
+        loss, pos_num_list = model(data[0], data[1], data[2], data[3])
 
         # backward
         optimizer.zero_grad()
@@ -222,30 +233,111 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         end = time.time()
 
         train_len = len(train_loader)
+        pos_num_list_1, pos_num_list_2 = pos_num_list
+        pos_nums_1, pos_means_1 = pos_num_list_1
+        pos_nums_2, pos_means_2 = pos_num_list_2
+        with torch.no_grad():
+            pos_num_1, pos_mean_1 = pos_nums_1.sum().item(), pos_means_1.mean().item()
+            pos_num_2, pos_mean_2 = pos_nums_2.sum().item(), pos_means_2.mean().item()
+            pos_num = pos_num_1 + pos_num_2
+            pos_mean = (pos_mean_1 + pos_mean_2) / 2.0
+
         if idx % args.print_freq == 0:
             lr = optimizer.param_groups[0]['lr']
+            loss_plus = loss_meter.val + 4.0
+            mask_ratio_str = ''
+            if is_mask_flow:
+                mask_ratio_str = f'mask ratio {r_fwd:.3f} {r_bwd:.3f}'
+
             logger.info(
                 f'Train: [{epoch}/{args.epochs}][{idx}/{train_len}]  '
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
                 f'lr {lr:.3f}  '
-                f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f})')
-
-            # tensorboard logger
-            if summary_writer is not None:
-                step = (epoch - 1) * len(train_loader) + idx
-                summary_writer.add_scalar('lr', lr, step)
-                summary_writer.add_scalar('loss', loss_meter.val, step)
+                f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f}) [{loss_plus:.3f}] '
+                f'pos_num {pos_num} ({pos_mean}) '
+                f'{mask_ratio_str}')
 
         if args.debug:
             continue
 
-        if dist.get_rank() == 0:
+        name_pos_num, name_pos_mean = "positive_pair/num", "positive_pair/avg"
+        name_pos_num_1, name_pos_mean_1 = f"{name_pos_num}/1", f"{name_pos_mean}/1"
+        name_pos_num_2, name_pos_mean_2 = f"{name_pos_num}/2", f"{name_pos_mean}/2"
+        name_fwd, name_bwd = 'mask_ratio/fwd', 'mask_ratio/bwd'
+
+        # tensorboard logger
+        is_tensorboard_log = summary_writer is not None
+        if is_tensorboard_log:
+            step = (epoch - 1) * len(train_loader) + idx
+            loss_plus = loss_meter.val + 4.0
+            lr = optimizer.param_groups[0]['lr']
+            summary_writer.add_scalar('lr', lr, step)
+            summary_writer.add_scalar('loss', loss_meter.val, step)
+            summary_writer.add_scalar('loss/plus', loss_plus, step)
+            summary_writer.add_scalar(name_pos_num, pos_num, step)
+            summary_writer.add_scalar(name_pos_mean, pos_mean, step)
+            summary_writer.add_scalar(name_pos_num_1, pos_num_1, step)
+            summary_writer.add_scalar(name_pos_mean_1, pos_mean_1, step)
+            summary_writer.add_scalar(name_pos_num_2, pos_num_2, step)
+            summary_writer.add_scalar(name_pos_mean_2, pos_mean_2, step)
+            if args.use_flow:
+                summary_writer.add_scalar(name_fwd, r_fwd, step)
+                summary_writer.add_scalar(name_bwd, r_bwd, step)
+
+        # wandb logger
+        is_wandb_log = dist.get_rank() == 0
+        if is_wandb_log:
             global_step = (epoch - 1) * train_len + idx
             loss_plus = loss_meter.val + 4.0
-            wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
-                       "loss/plus": loss_plus, "epoch": epoch - 1,
-                       "global_step": global_step, "time": batch_time.val,
-                       "time/avg": batch_time.avg})
+            lr = optimizer.param_groups[0]['lr']
+            wandb_dict = {"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
+                          "loss/plus": loss_plus, "epoch": epoch - 1,
+                          "global_step": global_step, "time": batch_time.val,
+                          "time/avg": batch_time.avg,
+                          name_pos_num: pos_num, name_pos_mean: pos_mean,
+                          name_pos_num_1: pos_num_1, name_pos_mean_1: pos_mean_1,
+                          name_pos_num_2: pos_num_2, name_pos_mean_2: pos_mean_2}
+            if is_mask_flow:
+                wandb_dict[name_fwd] = r_fwd
+                wandb_dict[name_bwd] = r_bwd
+
+        nb = pos_nums_1.shape[0]
+        for pos_i in range(nb):
+            tail_batch_str = f"batch_{pos_i}"
+            l_name_pos_num_1 = f"{name_pos_num_1}/{tail_batch_str}"
+            l_name_pos_mean_1 = f"{name_pos_mean_1}/{tail_batch_str}"
+            l_name_pos_num_2 = f"{name_pos_num_2}/{tail_batch_str}"
+            l_name_pos_mean_2 = f"{name_pos_mean_2}/{tail_batch_str}"
+            l_pos_num_1 = pos_nums_1[pos_i].item()
+            l_pos_mean_1 = pos_means_1[pos_i].item()
+            l_pos_num_2 = pos_nums_2[pos_i].item()
+            l_pos_mean_2 = pos_means_2[pos_i].item()
+
+            if is_mask_flow:
+                l_r_fwd, l_r_bwd = r_fwds[pos_i].item(), r_bwds[pos_i].item()
+                l_name_fwd = f"{name_fwd}/{tail_batch_str}"
+                l_name_bwd = f"{name_bwd}/{tail_batch_str}"
+
+            if is_tensorboard_log:
+                summary_writer.add_scalar(l_name_pos_num_1, l_pos_num_1, step)
+                summary_writer.add_scalar(l_name_pos_mean_1, l_pos_mean_1, step)
+                summary_writer.add_scalar(l_name_pos_num_2, l_pos_num_2, step)
+                summary_writer.add_scalar(l_name_pos_mean_2, l_pos_mean_2, step)
+                if args.use_flow:
+                    summary_writer.add_scalar(f'{l_name_fwd}', l_r_fwd, step)
+                    summary_writer.add_scalar(f'{l_name_bwd}', l_r_bwd, step)
+
+            if is_wandb_log:
+                wandb_dict[l_name_pos_num_1] = l_pos_num_1
+                wandb_dict[l_name_pos_mean_1] = l_pos_mean_1
+                wandb_dict[l_name_pos_num_2] = l_pos_num_2
+                wandb_dict[l_name_pos_mean_2] = l_pos_mean_2
+                if args.use_flow:
+                    wandb_dict[l_name_fwd] = l_r_fwd
+                    wandb_dict[l_name_bwd] = l_r_bwd
+
+        if is_wandb_log:
+            wandb.log(wandb_dict)
 
 
 def main_prog(opt):

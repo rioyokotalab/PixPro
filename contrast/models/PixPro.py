@@ -105,7 +105,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         k, out_root = k
 
     is_calc_flow = isinstance(coord_q, list)
-    mask = None
+    mask, flo_cycle = None, None
     if is_calc_flow:
         coord_q, flow_fwd = coord_q
         coord_k, flow_bwd = coord_k
@@ -290,7 +290,11 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
 
     loss = (logit * pos_mask_f).sum(-1).sum(-1) / (pos_mask_f.sum(-1).sum(-1) + 1e-6)
 
-    return -2 * loss.mean()
+    with torch.no_grad():
+        pos_num = pos_mask_f.sum(-1).sum(-1)
+        pos_mean = pos_mask_f.mean(-1).mean(-1)
+
+    return -2 * loss.mean(), [pos_num, pos_mean]
 
 
 def Proj_Head(in_dim=2048, inner_dim=4096, out_dim=256):
@@ -465,12 +469,14 @@ class PixPro(BaseModel):
         out_root2 = self.output_root + "/test_imgs/in_loss/2"  # debug
         proj_2_ng = (proj_2_ng, out_root1)
         proj_1_ng = (proj_1_ng, out_root2)
-        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio) \
-            + regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio)
+        loss_1 = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio)
+        loss_2 = regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio)
+        loss = loss_1[0] + loss_2[0]
+        pos_num_list = [loss_1[1], loss_2[1]]
 
         if self.pixpro_ins_loss_weight > 0.:
             loss_instance = self.regression_loss(pred_instance_1, proj_instance_2_ng) + \
                          self.regression_loss(pred_instance_2, proj_instance_1_ng)
             loss = loss + self.pixpro_ins_loss_weight * loss_instance
 
-        return loss
+        return loss, pos_num_list
