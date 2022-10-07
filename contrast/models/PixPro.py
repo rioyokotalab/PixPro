@@ -267,7 +267,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2
                              + (center_q_y.view(-1, H * W, 1) - center_k_y.view(-1, 1, H * W)) ** 2) / max_bin_diag
     pos_mask = (dist_center < pos_ratio)
-    if mask_fwd is not None:
+    if is_calc_flow and mask_fwd is not None:
         flow_mask = mask_fwd.view(-1, H * W, 1).repeat(1, 1, H * W)
         pos_mask = pos_mask & flow_mask
     pos_mask_f = pos_mask.float().detach()
