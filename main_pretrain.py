@@ -209,6 +209,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             r_bwds = util.calc_mask_ratio(mask_bwd)
             with torch.no_grad():
                 r_fwd, r_bwd = r_fwds.mean().item(), r_bwds.mean().item()
+                r = (r_fwd + r_bwd) / 2.0
 
         if args.debug:
             data[2] = (data[2], [data[6], idx, epoch])
@@ -247,7 +248,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             loss_plus = loss_meter.val + 4.0
             mask_ratio_str = ''
             if is_mask_flow:
-                mask_ratio_str = f'mask ratio {r_fwd:.3f} {r_bwd:.3f}'
+                mask_ratio_str = f'mask ratio {r:.3f}'
 
             logger.info(
                 f'Train: [{epoch}/{args.epochs}][{idx}/{train_len}]  '
@@ -263,7 +264,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         name_pos_num, name_pos_mean = "positive_pair/num", "positive_pair/avg"
         name_pos_num_1, name_pos_mean_1 = f"{name_pos_num}/1", f"{name_pos_mean}/1"
         name_pos_num_2, name_pos_mean_2 = f"{name_pos_num}/2", f"{name_pos_mean}/2"
-        name_fwd, name_bwd = 'mask_ratio/fwd', 'mask_ratio/bwd'
+        name_mask = 'mask_ratio'
+        name_fwd, name_bwd = f'{name_mask}/fwd', f'{name_mask}/bwd'
 
         # tensorboard logger
         is_tensorboard_log = summary_writer is not None
@@ -280,7 +282,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             summary_writer.add_scalar(name_pos_mean_1, pos_mean_1, step)
             summary_writer.add_scalar(name_pos_num_2, pos_num_2, step)
             summary_writer.add_scalar(name_pos_mean_2, pos_mean_2, step)
-            if args.use_flow:
+            if is_mask_flow:
+                summary_writer.add_scalar(name_mask, r, step)
                 summary_writer.add_scalar(name_fwd, r_fwd, step)
                 summary_writer.add_scalar(name_bwd, r_bwd, step)
 
@@ -298,6 +301,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                           name_pos_num_1: pos_num_1, name_pos_mean_1: pos_mean_1,
                           name_pos_num_2: pos_num_2, name_pos_mean_2: pos_mean_2}
             if is_mask_flow:
+                wandb_dict[name_mask] = r
                 wandb_dict[name_fwd] = r_fwd
                 wandb_dict[name_bwd] = r_bwd
 
@@ -323,7 +327,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar(l_name_pos_mean_1, l_pos_mean_1, step)
                 summary_writer.add_scalar(l_name_pos_num_2, l_pos_num_2, step)
                 summary_writer.add_scalar(l_name_pos_mean_2, l_pos_mean_2, step)
-                if args.use_flow:
+                if is_mask_flow:
                     summary_writer.add_scalar(f'{l_name_fwd}', l_r_fwd, step)
                     summary_writer.add_scalar(f'{l_name_bwd}', l_r_bwd, step)
 
@@ -332,7 +336,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 wandb_dict[l_name_pos_mean_1] = l_pos_mean_1
                 wandb_dict[l_name_pos_num_2] = l_pos_num_2
                 wandb_dict[l_name_pos_mean_2] = l_pos_mean_2
-                if args.use_flow:
+                if is_mask_flow:
                     wandb_dict[l_name_fwd] = l_r_fwd
                     wandb_dict[l_name_bwd] = l_r_bwd
 
