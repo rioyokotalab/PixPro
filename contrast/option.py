@@ -28,7 +28,7 @@ def parse_option(stage='pre-train'):
 
     # RAFT
     parser.add_argument('--use_flow', action='store_true')
-    parser.add_argument('--flow_model', default="./models/raft-small.pth", help=r"raft model path")
+    parser.add_argument('--flow_model', default="", help=r"raft model path")
     parser.add_argument('--flow_up', action='store_true')
     parser.add_argument('--alpha1', type=float, default=None, help='alpha1 for cycle consistency')
     parser.add_argument('--alpha2', type=float, default=None, help='alpha2 for cycle consistency')
@@ -68,7 +68,7 @@ def parse_option(stage='pre-train'):
                         help='mixed precision opt level, if O0, no amp is used')
     parser.add_argument('--start-epoch', type=int, default=1, help='used for resume')
     parser.add_argument('--epochs', type=int, default=100, help='number of training epochs')
-    parser.add_argument('--debug-epochs', type=int, default=100, help='debug number of training epochs')
+    parser.add_argument('--debug-epochs', type=int, default=None, help='debug number of training epochs')
     parser.add_argument('--verbose', action='store_true', help='debug print for raft')
     parser.add_argument('--debug', action='store_true', help='debug mode')
     parser.add_argument('--no_benchmark', action='store_true', help='torch.backends.cudnn.benchmark set to False')
@@ -107,5 +107,8 @@ def parse_option(stage='pre-train'):
 
     if args.image_size[0] == args.image_size[1]:
         args.image_size = args.image_size[0]
+
+    if args.debug_epochs is None:
+        args.debug_epochs = args.epochs + 1
 
     return args
