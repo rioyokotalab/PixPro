@@ -131,10 +131,12 @@ class VideoSample(data.Dataset):
             if n_frames <= 1:
                 video_name = os.path.dirname(path)
                 warnings.warn(f"{n_frames} videos can only be loaded in {video_name}")
-            next_local_i = local_i + n_frames - 1
-            next_path, next_target = video[next_local_i]
-            path = [path, next_path]
-            target = [target, next_target]
+            path, target = [path], [target]
+            for i in range(1, n_frames):
+                next_local_i = local_i + i
+                next_path, next_target = video[next_local_i]
+                path.append(next_path)
+                target.append(next_target)
 
         return path, target
 
@@ -367,9 +369,9 @@ class ImageFolder(DatasetFolder):
 
             if self.two_crop:
                 img2, coord2 = img2
-                return img, img2, coord, coord2, index, target, orig_imgs[0], orig_imgs[-1]
+                return img, img2, coord, coord2, index, target, orig_imgs
             else:
-                return img, coord, index, target, orig_imgs[0]
+                return img, coord, index, target, orig_imgs
         else:
             if isinstance(img, tuple):
                 img, coord = img
@@ -377,6 +379,6 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
-                return img, img2, index, target, orig_imgs[0], orig_imgs[-1]
+                return img, img2, index, target, orig_imgs
             else:
-                return img, index, target, orig_imgs[0]
+                return img, index, target, orig_imgs

@@ -196,7 +196,14 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
     end = time.time()
     for idx, data in enumerate(train_loader):
-        data = [item.cuda(non_blocking=True) for item in data]
+        tmp_list = []
+        for item in data:
+            if isinstance(item, (tuple, list)):
+                tmp = [l_item.cuda(non_blocking=True) for l_item in item]
+            else:
+                tmp = item.cuda(non_blocking=True)
+            tmp_list.append(tmp)
+        data = tmp_list.copy()
 
         if args.use_flow:
             flow_fwd, flow_bwd = apply_optical_flow(data, flow_model, args)
@@ -212,8 +219,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 r = (r_fwd + r_bwd) / 2.0
 
         if args.debug:
-            data[2] = (data[2], [data[6], idx, epoch])
-            data[3] = (data[3], [data[7], idx, epoch])
+            orig_imgs = data[6]
+            data[2] = (data[2], [orig_imgs[0], idx, epoch])
+            data[3] = (data[3], [orig_imgs[-1], idx, epoch])
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss, pos_num_list = model(data[0], data[1], data[2], data[3])
