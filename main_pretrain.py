@@ -2,6 +2,7 @@ import json
 import os
 import time
 from shutil import copyfile
+import glob
 
 import torch
 import torch.distributed as dist
@@ -194,6 +195,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
 
+    train_len = len(train_loader)
+    rank = dist.get_rank()
+    is_tensorboard_log = summary_writer is not None
+
     end = time.time()
     for idx, data in enumerate(train_loader):
         tmp_list = []
@@ -241,7 +246,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         batch_time.update(time.time() - end)
         end = time.time()
 
-        train_len = len(train_loader)
+        step = (epoch - 1) * len(train_loader) + idx
+        loss_plus = loss_meter.val + 4.0
+        lr = optimizer.param_groups[0]['lr']
+
         pos_num_list_1, pos_num_list_2 = pos_num_list
         pos_nums_1, pos_means_1 = pos_num_list_1
         pos_nums_2, pos_means_2 = pos_num_list_2
@@ -252,18 +260,16 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             pos_mean = (pos_mean_1 + pos_mean_2) / 2.0
 
         if idx % args.print_freq == 0:
-            lr = optimizer.param_groups[0]['lr']
-            loss_plus = loss_meter.val + 4.0
             mask_ratio_str = ''
             if is_mask_flow:
-                mask_ratio_str = f'mask ratio {r:.3f}'
+                mask_ratio_str = f'mask ratio {r:07.3%}'
 
             logger.info(
                 f'Train: [{epoch}/{args.epochs}][{idx}/{train_len}]  '
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
                 f'lr {lr:.3f}  '
                 f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f}) [{loss_plus:.3f}] '
-                f'pos_num {pos_num} ({pos_mean}) '
+                f'pos_num {pos_num:.4g} ({pos_mean:07.3%}) '
                 f'{mask_ratio_str}')
 
         if args.debug:
@@ -276,11 +282,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         name_fwd, name_bwd = f'{name_mask}/fwd', f'{name_mask}/bwd'
 
         # tensorboard logger
-        is_tensorboard_log = summary_writer is not None
         if is_tensorboard_log:
-            step = (epoch - 1) * len(train_loader) + idx
-            loss_plus = loss_meter.val + 4.0
-            lr = optimizer.param_groups[0]['lr']
             summary_writer.add_scalar('lr', lr, step)
             summary_writer.add_scalar('loss', loss_meter.val, step)
             summary_writer.add_scalar('loss/plus', loss_plus, step)
@@ -296,14 +298,11 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 summary_writer.add_scalar(name_bwd, r_bwd, step)
 
         # wandb logger
-        is_wandb_log = dist.get_rank() == 0
+        is_wandb_log = rank == 0
         if is_wandb_log:
-            global_step = (epoch - 1) * train_len + idx
-            loss_plus = loss_meter.val + 4.0
-            lr = optimizer.param_groups[0]['lr']
             wandb_dict = {"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
                           "loss/plus": loss_plus, "epoch": epoch - 1,
-                          "global_step": global_step, "time": batch_time.val,
+                          "global_step": step, "time": batch_time.val,
                           "time/avg": batch_time.avg,
                           name_pos_num: pos_num, name_pos_mean: pos_mean,
                           name_pos_num_1: pos_num_1, name_pos_mean_1: pos_mean_1,
@@ -313,52 +312,53 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 wandb_dict[name_fwd] = r_fwd
                 wandb_dict[name_bwd] = r_bwd
 
-        nb = pos_nums_1.shape[0]
-        for pos_i in range(nb):
-            tail_batch_str = f"batch_{pos_i}"
-            l_name_pos_num_1 = f"{name_pos_num_1}/{tail_batch_str}"
-            l_name_pos_mean_1 = f"{name_pos_mean_1}/{tail_batch_str}"
-            l_name_pos_num_2 = f"{name_pos_num_2}/{tail_batch_str}"
-            l_name_pos_mean_2 = f"{name_pos_mean_2}/{tail_batch_str}"
-            l_pos_num_1 = pos_nums_1[pos_i].item()
-            l_pos_mean_1 = pos_means_1[pos_i].item()
-            l_pos_num_2 = pos_nums_2[pos_i].item()
-            l_pos_mean_2 = pos_means_2[pos_i].item()
+        # nb = pos_nums_1.shape[0]
+        # for pos_i in range(nb):
+        #     tail_batch_str = f"batch_{pos_i}"
+        #     l_name_pos_num_1 = f"{name_pos_num_1}/{tail_batch_str}"
+        #     l_name_pos_mean_1 = f"{name_pos_mean_1}/{tail_batch_str}"
+        #     l_name_pos_num_2 = f"{name_pos_num_2}/{tail_batch_str}"
+        #     l_name_pos_mean_2 = f"{name_pos_mean_2}/{tail_batch_str}"
+        #     l_pos_num_1 = pos_nums_1[pos_i].item()
+        #     l_pos_mean_1 = pos_means_1[pos_i].item()
+        #     l_pos_num_2 = pos_nums_2[pos_i].item()
+        #     l_pos_mean_2 = pos_means_2[pos_i].item()
 
-            if is_mask_flow:
-                l_r_fwd, l_r_bwd = r_fwds[pos_i].item(), r_bwds[pos_i].item()
-                l_name_fwd = f"{name_fwd}/{tail_batch_str}"
-                l_name_bwd = f"{name_bwd}/{tail_batch_str}"
+        #     if is_mask_flow:
+        #         l_r_fwd, l_r_bwd = r_fwds[pos_i].item(), r_bwds[pos_i].item()
+        #         l_name_fwd = f"{name_fwd}/{tail_batch_str}"
+        #         l_name_bwd = f"{name_bwd}/{tail_batch_str}"
 
-            if is_tensorboard_log:
-                summary_writer.add_scalar(l_name_pos_num_1, l_pos_num_1, step)
-                summary_writer.add_scalar(l_name_pos_mean_1, l_pos_mean_1, step)
-                summary_writer.add_scalar(l_name_pos_num_2, l_pos_num_2, step)
-                summary_writer.add_scalar(l_name_pos_mean_2, l_pos_mean_2, step)
-                if is_mask_flow:
-                    summary_writer.add_scalar(f'{l_name_fwd}', l_r_fwd, step)
-                    summary_writer.add_scalar(f'{l_name_bwd}', l_r_bwd, step)
+        #     if is_tensorboard_log:
+        #         summary_writer.add_scalar(l_name_pos_num_1, l_pos_num_1, step)
+        #         summary_writer.add_scalar(l_name_pos_mean_1, l_pos_mean_1, step)
+        #         summary_writer.add_scalar(l_name_pos_num_2, l_pos_num_2, step)
+        #         summary_writer.add_scalar(l_name_pos_mean_2, l_pos_mean_2, step)
+        #         if is_mask_flow:
+        #             summary_writer.add_scalar(f'{l_name_fwd}', l_r_fwd, step)
+        #             summary_writer.add_scalar(f'{l_name_bwd}', l_r_bwd, step)
 
-            if is_wandb_log:
-                wandb_dict[l_name_pos_num_1] = l_pos_num_1
-                wandb_dict[l_name_pos_mean_1] = l_pos_mean_1
-                wandb_dict[l_name_pos_num_2] = l_pos_num_2
-                wandb_dict[l_name_pos_mean_2] = l_pos_mean_2
-                if is_mask_flow:
-                    wandb_dict[l_name_fwd] = l_r_fwd
-                    wandb_dict[l_name_bwd] = l_r_bwd
+        #     if is_wandb_log:
+        #         wandb_dict[l_name_pos_num_1] = l_pos_num_1
+        #         wandb_dict[l_name_pos_mean_1] = l_pos_mean_1
+        #         wandb_dict[l_name_pos_num_2] = l_pos_num_2
+        #         wandb_dict[l_name_pos_mean_2] = l_pos_mean_2
+        #         if is_mask_flow:
+        #             wandb_dict[l_name_fwd] = l_r_fwd
+        #             wandb_dict[l_name_bwd] = l_r_bwd
 
         if is_wandb_log:
             wandb.log(wandb_dict)
 
 
 def main_prog(opt):
+    rank = dist.get_rank()
     cudnn.benchmark = not opt.no_benchmark
     # setup logger
     os.makedirs(opt.output_dir, exist_ok=True)
     global logger
     logger = setup_logger(output=opt.output_dir, distributed_rank=dist.get_rank(), name="contrast")
-    if dist.get_rank() == 0:
+    if rank == 0:
         path = os.path.join(opt.output_dir, "config.json")
         with open(path, 'w') as f:
             json.dump(vars(opt), f, indent=2)
@@ -373,6 +373,11 @@ def main_prog(opt):
     )
 
     main(opt)
+
+    if rank == 0:
+        tf_path = glob.glob(os.path.join(opt.output_dir, "events.*"))
+        for l_tf_path in tf_path:
+            wandb.save(l_tf_path, base_path=opt.output_dir)
 
 
 if __name__ == '__main__':
