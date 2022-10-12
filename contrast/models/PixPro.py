@@ -162,7 +162,11 @@ def regression_loss(q, k, coord_q, coord_k, weight=1.0, pos_ratio=0.5):
 
     loss = (logit * pos_mask).sum(-1).sum(-1) / (pos_mask.sum(-1).sum(-1) + 1e-6)
 
-    return -2 * loss.mean()
+    with torch.no_grad():
+        pos_num = pos_mask.sum(-1).sum(-1)
+        pos_mean = pos_mask.mean(-1).mean(-1)
+
+    return -2 * loss.mean(), [pos_num, pos_mean]
 
 
 def Proj_Head(in_dim=2048, inner_dim=4096, out_dim=256):
@@ -370,12 +374,14 @@ class PixPro(BaseModel):
         # compute loss
         weight_1 = self.feat_weight(proj_1_copy, proj_2_copy)
         weight_2 = self.feat_weight(proj_2_copy, proj_1_copy)
-        loss = regression_loss(pred_1, proj_2_ng, coord1, coord2, weight_1, self.pixpro_pos_ratio) \
-            + regression_loss(pred_2, proj_1_ng, coord2, coord1, weight_2, self.pixpro_pos_ratio)
+        loss_1 = regression_loss(pred_1, proj_2_ng, coord1, coord2, weight_1, self.pixpro_pos_ratio)
+        loss_2 = regression_loss(pred_2, proj_1_ng, coord2, coord1, weight_2, self.pixpro_pos_ratio)
+        loss = loss_1[0] + loss_2[0]
+        pos_num_list = [loss_1[1], loss_2[1]]
 
         if self.pixpro_ins_loss_weight > 0.:
             loss_instance = self.regression_loss(pred_instance_1, proj_instance_2_ng) + \
                          self.regression_loss(pred_instance_2, proj_instance_1_ng)
             loss = loss + self.pixpro_ins_loss_weight * loss_instance
 
-        return loss
+        return loss, pos_num_list

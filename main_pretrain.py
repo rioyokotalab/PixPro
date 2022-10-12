@@ -159,6 +159,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     batch_time = AverageMeter()
     loss_meter = AverageMeter()
 
+    rank = dist.get_rank()
+    train_len = len(train_loader)
+
     end = time.time()
     for idx, data in enumerate(train_loader):
         data = [item.cuda(non_blocking=True) for item in data]
@@ -168,7 +171,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             data[3] = (data[3], [data[7], idx, epoch])
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
-        loss = model(data[0], data[1], data[2], data[3])
+        loss, pos_num_list = model(data[0], data[1], data[2], data[3])
 
         # backward
         optimizer.zero_grad()
@@ -185,31 +188,55 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         batch_time.update(time.time() - end)
         end = time.time()
 
-        train_len = len(train_loader)
+        step = (epoch - 1) * train_len + idx
+        loss_plus = loss_meter.val + 4.0
+        lr = optimizer.param_groups[0]['lr']
+
+        pos_num_list_1, pos_num_list_2 = pos_num_list
+        pos_nums_1, pos_means_1 = pos_num_list_1
+        pos_nums_2, pos_means_2 = pos_num_list_2
+        with torch.no_grad():
+            pos_num_1, pos_mean_1 = pos_nums_1.sum().item(), pos_means_1.mean().item()
+            pos_num_2, pos_mean_2 = pos_nums_2.sum().item(), pos_means_2.mean().item()
+            pos_num = pos_num_1 + pos_num_2
+            pos_mean = (pos_mean_1 + pos_mean_2) / 2.0
+
         if idx % args.print_freq == 0:
-            lr = optimizer.param_groups[0]['lr']
             logger.info(
                 f'Train: [{epoch}/{args.epochs}][{idx}/{train_len}]  '
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
                 f'lr {lr:.3f}  '
-                f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f})')
-
-            # tensorboard logger
-            if summary_writer is not None:
-                step = (epoch - 1) * len(train_loader) + idx
-                summary_writer.add_scalar('lr', lr, step)
-                summary_writer.add_scalar('loss', loss_meter.val, step)
+                f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f}) [{loss_plus:.3f}] '
+                f'pos_num {pos_num:.4g} ({pos_mean:07.3%})')
 
         if args.debug:
             continue
 
-        if dist.get_rank() == 0:
-            global_step = (epoch - 1) * train_len + idx
-            loss_plus = loss_meter.val + 4.0
-            wandb.log({"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
-                       "loss/plus": loss_plus, "epoch": epoch - 1,
-                       "global_step": global_step, "time": batch_time.val,
-                       "time/avg": batch_time.avg})
+        name_pos_num, name_pos_mean = "positive_pair/num", "positive_pair/avg"
+        name_pos_num_1, name_pos_mean_1 = f"{name_pos_num}/1", f"{name_pos_mean}/1"
+        name_pos_num_2, name_pos_mean_2 = f"{name_pos_num}/2", f"{name_pos_mean}/2"
+
+        # tensorboard logger
+        if summary_writer is not None:
+            summary_writer.add_scalar('lr', lr, step)
+            summary_writer.add_scalar('loss', loss_meter.val, step)
+            summary_writer.add_scalar('loss/plus', loss_plus, step)
+            summary_writer.add_scalar(name_pos_num, pos_num, step)
+            summary_writer.add_scalar(name_pos_mean, pos_mean, step)
+            summary_writer.add_scalar(name_pos_num_1, pos_num_1, step)
+            summary_writer.add_scalar(name_pos_mean_1, pos_mean_1, step)
+            summary_writer.add_scalar(name_pos_num_2, pos_num_2, step)
+            summary_writer.add_scalar(name_pos_mean_2, pos_mean_2, step)
+
+        if rank == 0:
+            wandb_dict = {"lr": lr, "loss": loss_meter.val, "loss/avg": loss_meter.avg,
+                          "loss/plus": loss_plus, "epoch": epoch - 1,
+                          "global_step": step, "time": batch_time.val,
+                          "time/avg": batch_time.avg,
+                          name_pos_num: pos_num, name_pos_mean: pos_mean,
+                          name_pos_num_1: pos_num_1, name_pos_mean_1: pos_mean_1,
+                          name_pos_num_2: pos_num_2, name_pos_mean_2: pos_mean_2}
+            wandb.log(wandb_dict)
 
 
 def main_prog(opt):
