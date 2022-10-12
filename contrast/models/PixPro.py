@@ -86,8 +86,9 @@ def regression_loss(q, k, coord_q, coord_k, weight=1.0, pos_ratio=0.5):
     k_start_x = coord_k[:, 0].view(-1, 1, 1)
     k_start_y = coord_k[:, 1].view(-1, 1, 1)
 
-    debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
-                            q_bin_height, k_bin_width, k_bin_height, q_grids, k_grids)
+    if is_debug:
+        debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
+                                q_bin_height, k_bin_width, k_bin_height, q_grids, k_grids)
     # [bs, 1, 1]
     q_bin_diag = torch.sqrt(q_bin_width ** 2 + q_bin_height ** 2)
     k_bin_diag = torch.sqrt(k_bin_width ** 2 + k_bin_height ** 2)
