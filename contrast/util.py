@@ -90,57 +90,21 @@ def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False):
     flow_fwds = flow_fwds.cuda()
     flow_bwds = flow_bwds.cuda()
     num_flow = flow_bwds.shape[0]
-    # tmp_fwd_list, tmp_bwd_list = {}, {}
-    # print(flow_fwds.shape)  # debug
     tmp_fwd_list, tmp_bwd_list = [], []
     for i in range(num_flow):
         flow_frame_num = i + 1
         l_num_flow = num_flow - flow_frame_num + 1
-        # l_tmp_fwd_list, l_tmp_bwd_list = [], []
         for fwd_s_idx in range(l_num_flow):
             fwd_next_idx = fwd_s_idx + flow_frame_num
             bwd_next_idx = num_flow - fwd_s_idx
             bwd_s_idx = bwd_next_idx - flow_frame_num
-            # print(fwd_s_idx, fwd_next_idx, bwd_s_idx, bwd_next_idx)  # debug
-            # print(flow_bwds[fwd_s_idx:fwd_next_idx].shape)  # debug
             tmp_fwd = concat_flow(flow_fwds[fwd_s_idx:fwd_next_idx], is_norm)
             tmp_bwd = concat_flow(flow_bwds[bwd_s_idx:bwd_next_idx], is_norm)
             tmp_fwd_list.append(tmp_fwd)
             tmp_bwd_list.append(tmp_bwd)
-            # l_tmp_fwd_list.append(tmp_fwd)
-            # l_tmp_bwd_list.append(tmp_bwd)
-        # tmp_fwd_list[f"{flow_frame_num + 1}"] = l_tmp_fwd_list
-        # tmp_bwd_list[f"{flow_frame_num + 1}"] = l_tmp_bwd_list
-        # print(flow_frame_num, num_flow, len(tmp_fwd_list)) # debug
-    # flow_fwd = tmp_fwd_list
-    # flow_bwd = tmp_bwd_list
     flow_fwd = torch.stack(tmp_fwd_list)
     flow_bwd = torch.stack(tmp_bwd_list)
 
-    # # debug (check data)
-    # # 1->6
-    # flow_fwd_tmp = concat_flow(flow_fwds, is_norm)
-    # flow_bwd_tmp = concat_flow(flow_bwds, is_norm)
-    # print(flow_fwd[0][0])
-    # print(flow_fwd[0][1])
-    # print(torch.min((flow_fwd[-1] == flow_fwd_tmp)), flow_fwd[-1].shape, flow_fwd_tmp.shape)
-    # print(torch.min((flow_bwd[-1] == flow_bwd_tmp)), flow_bwd[-1].shape, flow_bwd_tmp.shape)
-
-    # # 1->3
-    # imgs_3 = imgs[0:3]
-    # i = 1 if up else 0
-    # flow_fwds_tmp3 = torch.stack([
-    #     flow_model(img0, img1, upsample=False, test_mode=True)[i]
-    #     for img0, img1 in zip(imgs_3[:-1], imgs_3[1:])
-    # ])
-    # flow_bwds_tmp3 = torch.stack([
-    #     flow_model(img0, img1, upsample=False, test_mode=True)[i]
-    #     for img0, img1 in zip(imgs_3[1:][::-1], imgs_3[:-1][::-1])
-    # ])
-    # flow_fwds_tmp3 = concat_flow(flow_fwds_tmp3, is_norm)
-    # flow_bwds_tmp3 = concat_flow(flow_bwds_tmp3, is_norm)
-    # print(torch.min((flow_fwd[num_flow] == flow_fwds_tmp3)), (flow_fwd[num_flow] == flow_fwds_tmp3).float().mean(), flow_fwd[num_flow].shape, flow_fwds_tmp3.shape)
-    # print(torch.min((flow_bwd[num_flow] == flow_bwds_tmp3)), (flow_bwd[num_flow] == flow_bwds_tmp3).float().mean(), flow_bwd[num_flow].shape, flow_bwds_tmp3.shape)
     if verbose:
         rank = dist.get_rank()
         print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
@@ -189,7 +153,6 @@ def apply_optical_flow(data, flow_model, args):
     # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
-    # print(flow_bwd.shape) # debug
     if ndim == 4:
         flow_fwd = flow_fwd.unsqueeze(0)
         flow_bwd = flow_bwd.unsqueeze(0)
@@ -209,8 +172,6 @@ def apply_optical_flow(data, flow_model, args):
             if args.debug:
                 flow_cycle_fwd.append(l_flow_cycle_fwd)
                 flow_cycle_bwd.append(l_flow_cycle_bwd)
-            # print(l_flow_fwd.shape, l_mask_fwd.shape, l_mask_bwd.shape) # debug
-        # print(len(mask_fwd)) # debug
         mask_fwd = torch.stack(mask_fwd)
         mask_bwd = torch.stack(mask_bwd)
         if args.debug:
@@ -219,28 +180,12 @@ def apply_optical_flow(data, flow_model, args):
             mask_fwd = [mask_fwd, flow_cycle_fwd]
             mask_bwd = [mask_bwd, flow_cycle_bwd]
 
-    # # debug (check data)
-    # # 1->6
-    # _, _, mask_fwd_tmp = forward_backward_consistency(flow_fwd[-1], flow_bwd[-1], alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
-    # _, _, mask_bwd_tmp = forward_backward_consistency(flow_bwd[-1], flow_fwd[-1], alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
-    # print(torch.min((mask_fwd_tmp[0] == mask_fwd[-1])), (mask_fwd_tmp[0] == mask_fwd[-1]).float().mean(), mask_fwd_tmp[0].shape, mask_fwd[-1].shape)
-    # print(torch.min((mask_bwd_tmp[0] == mask_bwd[-1])), (mask_bwd_tmp[0] == mask_bwd[-1]).float().mean(), mask_bwd_tmp[0].shape, mask_bwd[-1].shape)
-
-    # # 1->3
-    # num_flow = len(orig_imgs) - 1
-    # _, _, mask_fwd_tmp3 = forward_backward_consistency(flow_fwd[num_flow], flow_bwd[num_flow], alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
-    # _, _, mask_bwd_tmp3 = forward_backward_consistency(flow_bwd[num_flow], flow_fwd[num_flow], alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
-    # print(torch.min((mask_fwd_tmp3[0] == mask_fwd[num_flow])), (mask_fwd_tmp3[0] == mask_fwd[num_flow]).float().mean(), mask_fwd_tmp3[0].shape, mask_fwd[num_flow].shape)
-    # print(torch.min((mask_bwd_tmp3[0] == mask_bwd[num_flow])), (mask_bwd_tmp3[0] == mask_bwd[num_flow]).float().mean(), mask_bwd_tmp3[0].shape, mask_bwd[num_flow].shape)
-
     if args.flow_cat_norm:
         flow_fwd = torch.stack([denormalize_flow(f) for f in flow_fwd])
         flow_bwd = torch.stack([denormalize_flow(f) for f in flow_bwd])
 
     is_use_flow_frames = hasattr(args, "use_flow_frames") and args.use_flow_frames
     is_use_flow_frames = is_use_flow_frames and num_img > 2
-    # is_all_use_flow_frames = not hasattr(args, "use_frame_list")
-    # is_all_use_flow_frames = is_all_use_flow_frames or args.use_frame_list is None
     if not is_use_flow_frames:
         flow_fwd, flow_bwd = flow_fwd[-1], flow_bwd[-1]
         if mask_fwd is None or mask_bwd is None:
@@ -253,42 +198,6 @@ def apply_optical_flow(data, flow_model, args):
             else:
                 mask_fwd = mask_fwd[-1]
                 mask_bwd = mask_bwd[-1]
-    # elif not is_all_use_flow_frames:
-    #     all_nframe, s_i = len(orig_imgs), 0
-    #     tmp_fwd_list, tmp_bwd_list = [], []
-    #     tmp_mask_fwd_list, tmp_mask_bwd_list = [], []
-    #     l_is_mask_flow = mask_fwd is not None and mask_bwd is not None
-    #     l_is_debug = isinstance(mask_fwd, list)
-    #     if l_is_mask_flow:
-    #         if l_is_debug:
-    #             mask_fwd, flow_cycle_fwd = mask_fwd
-    #             mask_bwd, flow_cycle_bwd = mask_bwd
-    #             tmp_cycle_fwd_list, tmp_cycle_bwd_list = [], []
-    #     for use_frame in args.use_frame_list:
-    #         if use_frame is None or use_frame <= 1:
-    #             continue
-    #         flow_num = all_nframe - use_frame + 1
-    #         tmp_fwd_list.append(flow_fwd[s_i:s_i+flow_num])
-    #         tmp_bwd_list.append(flow_bwd[s_i:s_i+flow_num])
-    #         if l_is_mask_flow:
-    #             tmp_mask_fwd_list.append(mask_fwd[s_i:s_i+flow_num])
-    #             tmp_mask_bwd_list.append(mask_bwd[s_i:s_i+flow_num])
-    #             if l_is_debug:
-    #                 tmp_cycle_fwd_list.append(flow_cycle_fwd[s_i:s_i+flow_num])
-    #                 tmp_cycle_bwd_list.append(flow_cycle_bwd[s_i:s_i+flow_num])
-    #         s_i += flow_num
-    #     if len(tmp_fwd_list) > 0:
-    #         flow_fwd = torch.cat(tmp_fwd_list)
-    #         flow_bwd = torch.cat(tmp_bwd_list)
-    #     if len(tmp_mask_fwd_list) > 0:
-    #         mask_fwd = torch.cat(tmp_mask_fwd_list)
-    #         mask_bwd = torch.cat(tmp_mask_bwd_list)
-    #     if l_is_mask_flow and l_is_debug:
-    #         if len(tmp_cycle_fwd_list) > 0:
-    #             flow_cycle_fwd = torch.cat(tmp_cycle_fwd_list)
-    #             flow_cycle_bwd = torch.cat(tmp_cycle_bwd_list)
-    #             mask_fwd = [mask_fwd, flow_cycle_fwd]
-    #             mask_bwd = [mask_bwd, flow_cycle_bwd]
 
     flow_fwd = [flow_fwd, size, mask_fwd]
     flow_bwd = [flow_bwd, size, mask_bwd]

@@ -151,38 +151,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
                                 q_bin_height, k_bin_width, k_bin_height, q_grids,
                                 k_grids)
-    # [bs, 1, 1]
-    # q_flip_x = (coord_q[:, 0] > coord_q[:, 2]).view(-1, 1, 1)
-    # q_flip_y = (coord_q[:, 1] > coord_q[:, 3]).view(-1, 1, 1)
-    # q_flip_x = (2 * q_flip_x - 1).to(torch.int)
-    # q_flip_y = (2 * q_flip_y - 1).to(torch.int)
-    # q_bin_width = ((coord_q[:, 6] - 1) / W).view(-1, 1, 1)
-    # q_bin_height = ((coord_q[:, 7] - 1) / H).view(-1, 1, 1)
-    # q_bin_width = q_bin_width * q_flip_x
-    # q_bin_height = q_bin_width * q_flip_y
-    # k_flip_x = (coord_k[:, 0] > coord_k[:, 2]).view(-1, 1, 1)
-    # k_flip_y = (coord_k[:, 1] > coord_k[:, 3]).view(-1, 1, 1)
-    # k_flip_x = (2 * k_flip_x - 1).to(torch.int)
-    # k_flip_y = (2 * k_flip_y - 1).to(torch.int)
-    # k_bin_width = ((coord_k[:, 6] - 1) / W).view(-1, 1, 1)
-    # k_bin_height = ((coord_k[:, 7] - 1) / H).view(-1, 1, 1)
-    # k_bin_width = k_bin_width * k_flip_x
-    # k_bin_height = k_bin_width * k_flip_y
-    # # q_width = ((coord_q[:, 6] - 1).to(torch.int)).view(-1, 1, 1)
-    # # q_height = ((coord_q[:, 7] - 1).to(torch.int)).view(-1, 1, 1)
-    # # k_width = ((coord_k[:, 6] - 1).to(torch.int)).view(-1, 1, 1)
-    # # k_height = ((coord_k[:, 7] - 1).to(torch.int)).view(-1, 1, 1)
-    # # [bs, 1, 1]
-    # q_start_x = coord_q[:, 4].view(-1, 1, 1)
-    # q_start_y = coord_q[:, 5].view(-1, 1, 1)
-    # k_start_x = coord_k[:, 4].view(-1, 1, 1)
-    # k_start_y = coord_k[:, 5].view(-1, 1, 1)
 
-    # [bs, 1, 1]
-    # q_bin_diag = torch.sqrt((H * q_width) ** 2 + (W * q_height) ** 2) / torch.sqrt(W ** 2 + H ** 2)
-    # k_bin_diag = torch.sqrt((H * k_width) ** 2 + (W * k_height) ** 2) / torch.sqrt(W ** 2 + H ** 2)
-    # q_bin_diag = torch.sqrt(q_bin_width ** 2 + q_bin_height ** 2)
-    # k_bin_diag = torch.sqrt(k_bin_width ** 2 + k_bin_height ** 2)
     q_bin_diag = torch.sqrt((q_bin_width * (W_orig - 1)) ** 2 + (q_bin_height * (H_orig - 1)) ** 2)
     k_bin_diag = torch.sqrt((k_bin_width * (W_orig - 1)) ** 2 + (k_bin_height * (H_orig - 1)) ** 2)
     max_bin_diag = torch.max(q_bin_diag, k_bin_diag)
@@ -200,10 +169,6 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
         center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
         center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
-        # center_q_x = x_array * q_bin_width + q_start_x
-        # center_q_y = y_array * q_bin_height + q_start_y
-        # center_k_x = x_array * k_bin_width + k_start_x
-        # center_k_y = y_array * k_bin_height + k_start_y
         center_q_x = center_q_x * (W_orig - 1)
         center_q_y = center_q_y * (H_orig - 1)
         center_k_x = center_k_x * (W_orig - 1)
@@ -228,10 +193,6 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         q_y = (y_array + 0.5) * q_bin_height + q_start_y
         k_x = (x_array + 0.5) * k_bin_width + k_start_x
         k_y = (y_array + 0.5) * k_bin_height + k_start_y
-        # q_x = x_array * q_bin_width + q_start_x
-        # q_y = y_array * q_bin_height + q_start_y
-        # k_x = x_array * k_bin_width + k_start_x
-        # k_y = y_array * k_bin_height + k_start_y
         q_x = q_x * (W_orig - 1)
         q_y = q_y * (H_orig - 1)
         k_x = k_x * (W_orig - 1)
@@ -251,17 +212,6 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
                                         center_q_x, center_q_y, center_k_x, center_k_y,
                                         flow_fwd, out_path_flo, out_path_center_flo,
                                         add_optical_flow, [mask, flo_cycle])
-        # center_q_x, center_q_y = q_x.clone(), q_y.clone()
-        # center_k_x, center_k_y = add_optical_flow(flow_fwd, q_x, q_y, size)
-
-    # debug_utils.debug_print(q_start_x, q_start_y, k_start_x, k_start_y, q_bin_width,
-    #                         q_bin_height, k_bin_width, k_bin_height,
-    #                         q_bin_diag=q_bin_diag, k_bin_diag=k_bin_diag,
-    #                         max_bin_diag=max_bin_diag, center_q_x=center_q_x,
-    #                         center_q_y=center_q_y, center_k_x=center_k_x,
-    #                         # q_flip_x=q_flip_x, q_flip_y=q_flip_y,
-    #                         # k_flip_x=k_flip_x, k_flip_y=k_flip_y,
-    #                         center_k_y=center_k_y)
 
     # [bs, 49, 49]
     dist_center = torch.sqrt((center_q_x.view(-1, H * W, 1) - center_k_x.view(-1, 1, H * W)) ** 2

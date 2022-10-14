@@ -249,10 +249,6 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss, pos_num_list = model(data[0], data[1], data[2], data[3])
 
-        # # check model k not inc check
-        # with torch.no_grad():
-        #     print("model, k:", model.module.k, model.module.K, idx)
-
         if is_use_flow_frames:
             assert flow_fwd_tmp.ndim == 5
             # In PixPro,
@@ -269,13 +265,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             num_kind_frame = len(data[6]) - 1
             flow_id = 0
             for frame_idx in range(num_kind_frame - 1):
-                # l_frame_num = frame_idx + 2
                 l_num_flow = num_kind_frame - frame_idx
                 for loss_idx in range(l_num_flow):
-                    # # debug check index
-                    # next_idx_tmp = loss_idx + frame_idx
-                    # print("in loop model, idx:", num_kind_frame, frame_idx, l_num_flow, loss_idx, next_idx_tmp, flow_id)
-                    # print("in loop model, idx2:", loss_idx, next_idx_tmp, flow_id)
                     l_im1 = im1_list[loss_idx].clone()
                     l_im2 = im2_list[loss_idx + frame_idx].clone()
                     l_coord1 = coord1_list[loss_idx].clone()
@@ -316,9 +307,6 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 pos_num_list_1 = [pos_nums_1, pos_means_1]
                 pos_num_list_2 = [pos_nums_2, pos_means_2]
                 pos_num_list = [pos_num_list_1, pos_num_list_2]
-            # # check model k not inc check
-            # with torch.no_grad():
-            #     print("after model, k:", model.module.k, model.module.K, idx, flow_id)
 
         # backward
         optimizer.zero_grad()
