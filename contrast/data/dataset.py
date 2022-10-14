@@ -369,7 +369,8 @@ class ImageFolder(DatasetFolder):
 
             if self.two_crop:
                 img2, coord2 = img2
-                return img, img2, coord, coord2, index, target, orig_imgs
+                out_data = [img, img2, coord, coord2, index, target, orig_imgs]
+                return out_data
             else:
                 return img, coord, index, target, orig_imgs
         else:

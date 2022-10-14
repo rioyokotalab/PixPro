@@ -97,7 +97,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
 
     # debug
     is_debug = isinstance(coord_q, tuple)
-    if isinstance(coord_q, tuple):
+    if is_debug:
         prepare_out = debug_utils.prepare_imgs(coord_q, coord_k)
         coord_q, coord_k, test_imgs, test_imgs2, img1, img2, idx, epoch = prepare_out
     out_root = "./output"
@@ -464,11 +464,17 @@ class PixPro(BaseModel):
                 proj_instance_2_ng = F.normalize(self.avgpool(proj_instance_2_ng).view(proj_instance_2_ng.size(0), -1),
                                                  dim=1)
 
+        # debug
+        is_debug = isinstance(coord1, tuple)
+        if is_debug:
+            self.debug_k = self.debug_k + 1 if hasattr(self, "debug_k") else self.k
+            tail_str = f"{self.k}_{self.debug_k}"
+            out_root1 = self.output_root + f"/test_imgs/in_loss/1/{tail_str}"
+            out_root2 = self.output_root + f"/test_imgs/in_loss/2/{tail_str}"
+            proj_2_ng = (proj_2_ng, out_root1)
+            proj_1_ng = (proj_1_ng, out_root2)
+
         # compute loss
-        out_root1 = self.output_root + "/test_imgs/in_loss/1"  # debug
-        out_root2 = self.output_root + "/test_imgs/in_loss/2"  # debug
-        proj_2_ng = (proj_2_ng, out_root1)
-        proj_1_ng = (proj_1_ng, out_root2)
         loss_1 = regression_loss(pred_1, proj_2_ng, coord1, coord2, self.pixpro_pos_ratio)
         loss_2 = regression_loss(pred_2, proj_1_ng, coord2, coord1, self.pixpro_pos_ratio)
         loss = loss_1[0] + loss_2[0]

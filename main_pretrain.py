@@ -212,16 +212,17 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
         if args.use_flow:
             flow_fwd, flow_bwd = apply_optical_flow(data, flow_model, args)
+            flow_fwd_tmp, size, mask_fwd = flow_fwd
+            flow_bwd_tmp, _, mask_bwd = flow_bwd
+            is_list_mask = isinstance(mask_fwd, list)
+            mask_fwd_tmp = mask_fwd[0].clone() if is_list_mask else mask_fwd.clone()
+            mask_bwd_tmp = mask_bwd[0].clone() if is_list_mask else mask_bwd.clone()
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]
 
         if is_mask_flow:
-            if args.debug:
-                mask_fwd, mask_bwd = flow_fwd[2][0], flow_bwd[2][0]
-            else:
-                mask_fwd, mask_bwd = flow_fwd[2], flow_bwd[2]
-            r_fwds = util.calc_mask_ratio(mask_fwd)
-            r_bwds = util.calc_mask_ratio(mask_bwd)
+            r_fwds = util.calc_mask_ratio(mask_fwd_tmp)
+            r_bwds = util.calc_mask_ratio(mask_bwd_tmp)
             with torch.no_grad():
                 r_fwd, r_bwd = r_fwds.mean().item(), r_bwds.mean().item()
                 r = (r_fwd + r_bwd) / 2.0
@@ -314,41 +315,6 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 wandb_dict[name_mask] = r
                 wandb_dict[name_fwd] = r_fwd
                 wandb_dict[name_bwd] = r_bwd
-
-        # nb = pos_nums_1.shape[0]
-        # for pos_i in range(nb):
-        #     tail_batch_str = f"batch_{pos_i}"
-        #     l_name_pos_num_1 = f"{name_pos_num_1}/{tail_batch_str}"
-        #     l_name_pos_mean_1 = f"{name_pos_mean_1}/{tail_batch_str}"
-        #     l_name_pos_num_2 = f"{name_pos_num_2}/{tail_batch_str}"
-        #     l_name_pos_mean_2 = f"{name_pos_mean_2}/{tail_batch_str}"
-        #     l_pos_num_1 = pos_nums_1[pos_i].item()
-        #     l_pos_mean_1 = pos_means_1[pos_i].item()
-        #     l_pos_num_2 = pos_nums_2[pos_i].item()
-        #     l_pos_mean_2 = pos_means_2[pos_i].item()
-
-        #     if is_mask_flow:
-        #         l_r_fwd, l_r_bwd = r_fwds[pos_i].item(), r_bwds[pos_i].item()
-        #         l_name_fwd = f"{name_fwd}/{tail_batch_str}"
-        #         l_name_bwd = f"{name_bwd}/{tail_batch_str}"
-
-        #     if is_tensorboard_log:
-        #         summary_writer.add_scalar(l_name_pos_num_1, l_pos_num_1, step)
-        #         summary_writer.add_scalar(l_name_pos_mean_1, l_pos_mean_1, step)
-        #         summary_writer.add_scalar(l_name_pos_num_2, l_pos_num_2, step)
-        #         summary_writer.add_scalar(l_name_pos_mean_2, l_pos_mean_2, step)
-        #         if is_mask_flow:
-        #             summary_writer.add_scalar(f'{l_name_fwd}', l_r_fwd, step)
-        #             summary_writer.add_scalar(f'{l_name_bwd}', l_r_bwd, step)
-
-        #     if is_wandb_log:
-        #         wandb_dict[l_name_pos_num_1] = l_pos_num_1
-        #         wandb_dict[l_name_pos_mean_1] = l_pos_mean_1
-        #         wandb_dict[l_name_pos_num_2] = l_pos_num_2
-        #         wandb_dict[l_name_pos_mean_2] = l_pos_mean_2
-        #         if is_mask_flow:
-        #             wandb_dict[l_name_fwd] = l_r_fwd
-        #             wandb_dict[l_name_bwd] = l_r_bwd
 
         if is_wandb_log:
             wandb.log(wandb_dict)

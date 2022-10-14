@@ -74,6 +74,7 @@ class MyHelpFormatter(argparse.MetavarTypeHelpFormatter, argparse.ArgumentDefaul
 @torch.no_grad()
 def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False):
     num_img = len(imgs)
+    assert num_img >= 2
     if verbose:
         orig_im1, orig_im2 = imgs[0].clone(), imgs[-1].clone()
     i = 1 if up else 0
@@ -86,16 +87,10 @@ def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False):
         flow_model(img0, img1, upsample=False, test_mode=True)[i]
         for img0, img1 in zip(imgs[1:][::-1], imgs[:-1][::-1])
     ])
-    flow_fwd = flow_fwds[0].cuda()
-    flow_bwd = flow_bwds[0].cuda()
-    if num_img > 2:
-        flow_fwds = flow_fwds.cuda()
-        flow_bwds = flow_bwds.cuda()
-        flow_fwd = concat_flow(flow_fwds, is_norm)
-        flow_bwd = concat_flow(flow_bwds, is_norm)
-    elif is_norm:
-        flow_fwd = normalize_flow(flow_fwd)
-        flow_bwd = normalize_flow(flow_bwd)
+    flow_fwds = flow_fwds.cuda()
+    flow_bwds = flow_bwds.cuda()
+    flow_fwd = concat_flow(flow_fwds, is_norm)
+    flow_bwd = concat_flow(flow_bwds, is_norm)
     if verbose:
         rank = dist.get_rank()
         print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
@@ -114,25 +109,29 @@ def apply_optical_flow(data, flow_model, args):
     bs = orig_im1.shape[0]
     # to reduce memory usage
     flow_fwds, flow_bwds = [], []
-    s_index = 0 if bs % 2 == 0 else 1
-    if bs % 2 != 0:
-        l_orig_imgs = [im[0:1] for im in orig_imgs]
+    flow_bs = 8
+    if hasattr(args, "flow_bs") and args.flow_bs is not None:
+        flow_bs = args.flow_bs
+    s_index = bs % flow_bs
+    if s_index != 0:
+        l_orig_imgs = [im[0:s_index] for im in orig_imgs]
         flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs,
                                                flow_model, is_norm=args.flow_cat_norm,
                                                up=args.flow_up, verbose=args.verbose)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
-    for i in range(s_index, bs, 2):
-        if i + 2 > bs:
+    for i in range(s_index, bs, flow_bs):
+        if i + flow_bs > bs:
             break
-        l_orig_imgs = [im[i:i+2] for im in orig_imgs]
+        l_orig_imgs = [im[i:i+flow_bs] for im in orig_imgs]
         flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs,
                                                flow_model, is_norm=args.flow_cat_norm,
                                                up=args.flow_up, verbose=args.verbose)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
-    flow_fwd = torch.cat(flow_fwds, dim=0)
-    flow_bwd = torch.cat(flow_bwds, dim=0)
+    cat_dim = 0
+    flow_fwd = torch.cat(flow_fwds, dim=cat_dim)
+    flow_bwd = torch.cat(flow_bwds, dim=cat_dim)
     # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
@@ -200,7 +199,13 @@ def forward_backward_consistency(flow_fwd, flow_bwd, coords0=None, alpha_1=0.01,
 
 @torch.no_grad()
 def concat_flow(flows, is_norm=False):
-    _, nb, _, ht, wd = flows.shape
+    num, nb, _, ht, wd = flows.shape
+    if num == 1:
+        flows_copy = flows.clone()
+        out_flow = flows_copy[0]
+        if is_norm:
+            return normalize_flow(out_flow)
+        return out_flow
     coords0 = torch.meshgrid(torch.arange(ht), torch.arange(wd))
     coords0 = torch.stack(coords0[::-1], dim=0).float().repeat(nb, 1, 1, 1)
     coords0 = coords0.to(flows.device)

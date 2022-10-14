@@ -33,6 +33,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--alpha1', type=float, default=None, help='alpha1 for cycle consistency')
     parser.add_argument('--alpha2', type=float, default=None, help='alpha2 for cycle consistency')
     parser.add_argument('--flow_cat_norm', action='store_true', help='normalize flow after calc flow')
+    parser.add_argument('--flow_bs', type=int, default=None, help='flow num for calc optical flow / 1gpu')
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')
