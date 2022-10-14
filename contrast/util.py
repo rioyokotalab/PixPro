@@ -138,6 +138,9 @@ def apply_optical_flow(data, flow_model, args):
     flow_bwd = flow_bwd.cuda()
     _, _, mask_fwd = forward_backward_consistency(flow_fwd, flow_bwd, alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
     _, _, mask_bwd = forward_backward_consistency(flow_bwd, flow_fwd, alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
+    if not args.debug:
+        mask_fwd, _ = mask_fwd
+        mask_bwd, _ = mask_bwd
     if args.flow_cat_norm:
         flow_fwd = denormalize_flow(flow_fwd)
         flow_bwd = denormalize_flow(flow_bwd)

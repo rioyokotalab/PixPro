@@ -216,7 +216,10 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             data[3] = [data[3], flow_bwd]
 
         if is_mask_flow:
-            mask_fwd, mask_bwd = flow_fwd[2][0], flow_bwd[2][0]
+            if args.debug:
+                mask_fwd, mask_bwd = flow_fwd[2][0], flow_bwd[2][0]
+            else:
+                mask_fwd, mask_bwd = flow_fwd[2], flow_bwd[2]
             r_fwds = util.calc_mask_ratio(mask_fwd)
             r_bwds = util.calc_mask_ratio(mask_bwd)
             with torch.no_grad():
