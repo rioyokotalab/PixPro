@@ -415,7 +415,7 @@ class PixPro(BaseModel):
     def regression_loss(self, x, y):
         return -2. * torch.einsum('nc, nc->n', [x, y]).mean()
 
-    def forward(self, im_1, im_2, coord1, coord2):
+    def forward(self, im_1, im_2, coord1, coord2, is_update_momentum=True):
         """
         Input:
             im_q: a batch of query images
@@ -445,7 +445,8 @@ class PixPro(BaseModel):
 
         # compute key features
         with torch.no_grad():  # no gradient to keys
-            self._momentum_update_key_encoder()  # update the key encoder
+            if is_update_momentum:
+                self._momentum_update_key_encoder()  # update the key encoder
 
             feat_1_ng = self.encoder_k(im_1)  # keys: NxC
             proj_1_ng = self.projector_k(feat_1_ng)

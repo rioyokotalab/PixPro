@@ -362,6 +362,40 @@ class ImageFolder(DatasetFolder):
             else:
                 img2 = self.transform(images[-1])
 
+        if self.two_crop:
+            is_two_trans = isinstance(self.transform, tuple)
+            is_two_trans = is_two_trans and len(self.transform) == 2
+            img_list, coord_list = [], []
+            img2_list, coord2_list = [], []
+            if len(images) > 2:
+                if isinstance(img, tuple):
+                    img_list.append(img[0])
+                    coord_list.append(img[1])
+                else:
+                    img_list.append(img)
+                for l_img in images[1:-1]:
+                    if is_two_trans:
+                        tmp_img = self.transform[0](l_img)
+                        tmp_img2 = self.transform[1](l_img)
+                    else:
+                        tmp_img = self.transform(l_img)
+                        tmp_img2 = self.transform(l_img)
+                    is_tuple = isinstance(tmp_img, tuple)
+                    if self.return_coord:
+                        assert is_tuple
+                    if is_tuple:
+                        tmp_img, tmp_coord = tmp_img
+                        tmp_img2, tmp_coord2 = tmp_img2
+                        coord_list.append(tmp_coord)
+                        coord2_list.append(tmp_coord2)
+                    img_list.append(tmp_img)
+                    img2_list.append(tmp_img2)
+                if isinstance(img2, tuple):
+                    img2_list.append(img2[0])
+                    coord2_list.append(img2[1])
+                else:
+                    img2_list.append(img2)
+
         orig_imgs = [load_img_for_raft(image) for image in images]
         if self.return_coord:
             assert isinstance(img, tuple)
@@ -370,6 +404,7 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 img2, coord2 = img2
                 out_data = [img, img2, coord, coord2, index, target, orig_imgs]
+                out_data.extend([img_list, img2_list, coord_list, coord2_list])
                 return out_data
             else:
                 return img, coord, index, target, orig_imgs
@@ -380,6 +415,6 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
-                return img, img2, index, target, orig_imgs
+                return img, img2, index, target, orig_imgs, img_list, img2_list
             else:
                 return img, index, target, orig_imgs

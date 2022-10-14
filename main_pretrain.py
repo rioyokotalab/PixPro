@@ -184,6 +184,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
     """
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
     is_mask_flow = is_mask_flow and args.use_flow
+    is_use_flow_frames = hasattr(args, "use_flow_frames") and args.use_flow_frames
+    is_use_flow_frames = is_use_flow_frames and args.n_frames > 2
+    is_use_flow_frames = is_use_flow_frames and args.use_flow
 
     if args.use_flow:
         model, flow_model = model
@@ -217,6 +220,14 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             is_list_mask = isinstance(mask_fwd, list)
             mask_fwd_tmp = mask_fwd[0].clone() if is_list_mask else mask_fwd.clone()
             mask_bwd_tmp = mask_bwd[0].clone() if is_list_mask else mask_bwd.clone()
+            if is_list_mask:
+                flow_cycle_fwd_tmp = mask_fwd[1].clone()
+                flow_cycle_bwd_tmp = mask_bwd[1].clone()
+            if is_use_flow_frames:
+                mask_fwd = [m[-1] for m in mask_fwd] if is_list_mask else mask_fwd[-1]
+                mask_bwd = [m[-1] for m in mask_bwd] if is_list_mask else mask_bwd[-1]
+                flow_fwd = [flow_fwd_tmp[-1], size, mask_fwd]
+                flow_bwd = [flow_bwd_tmp[-1], size, mask_bwd]
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]
 
@@ -224,6 +235,9 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             r_fwds = util.calc_mask_ratio(mask_fwd_tmp)
             r_bwds = util.calc_mask_ratio(mask_bwd_tmp)
             with torch.no_grad():
+                if is_use_flow_frames or r_fwds.ndim == 2:
+                    r_fwds = r_fwds.mean(0)
+                    r_bwds = r_bwds.mean(0)
                 r_fwd, r_bwd = r_fwds.mean().item(), r_bwds.mean().item()
                 r = (r_fwd + r_bwd) / 2.0
 
@@ -234,6 +248,77 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss, pos_num_list = model(data[0], data[1], data[2], data[3])
+
+        # # check model k not inc check
+        # with torch.no_grad():
+        #     print("model, k:", model.module.k, model.module.K, idx)
+
+        if is_use_flow_frames:
+            assert flow_fwd_tmp.ndim == 5
+            # In PixPro,
+            # data[6] -> orig_imgs, data[7] -> im1_list, data[8] -> im2_list
+            # data[9] -> coord1_list, data[10] -> coord2_list
+            pos_num_list_1, pos_num_list_2 = pos_num_list
+            pos_nums_1, pos_means_1 = pos_num_list_1
+            pos_nums_2, pos_means_2 = pos_num_list_2
+            pos_nums_1_list, pos_means_1_list = [pos_nums_1], [pos_means_1]
+            pos_nums_2_list, pos_means_2_list = [pos_nums_2], [pos_means_2]
+            loss_num = 1
+            im1_list, im2_list = data[7], data[8]
+            coord1_list, coord2_list = data[9], data[10]
+            num_kind_frame = len(data[6]) - 1
+            flow_id = 0
+            for frame_idx in range(num_kind_frame - 1):
+                # l_frame_num = frame_idx + 2
+                l_num_flow = num_kind_frame - frame_idx
+                for loss_idx in range(l_num_flow):
+                    # # debug check index
+                    # next_idx_tmp = loss_idx + frame_idx
+                    # print("in loop model, idx:", num_kind_frame, frame_idx, l_num_flow, loss_idx, next_idx_tmp, flow_id)
+                    # print("in loop model, idx2:", loss_idx, next_idx_tmp, flow_id)
+                    l_im1 = im1_list[loss_idx].clone()
+                    l_im2 = im2_list[loss_idx + frame_idx].clone()
+                    l_coord1 = coord1_list[loss_idx].clone()
+                    l_coord2 = coord2_list[loss_idx + frame_idx].clone()
+                    l_flow_fwd = flow_fwd_tmp[flow_id].clone()
+                    l_flow_bwd = flow_bwd_tmp[flow_id].clone()
+                    if is_mask_flow:
+                        l_mask_fwd = mask_fwd_tmp[flow_id].clone()
+                        l_mask_bwd = mask_bwd_tmp[flow_id].clone()
+                        if is_list_mask:
+                            l_mask_fwd = [l_mask_fwd, flow_cycle_fwd_tmp[flow_id]]
+                            l_mask_bwd = [l_mask_bwd, flow_cycle_bwd_tmp[flow_id]]
+                        l_flow_fwd = [l_flow_fwd, size, l_mask_fwd]
+                        l_flow_bwd = [l_flow_bwd, size, l_mask_bwd]
+                    l_coord1 = [l_coord1, l_flow_fwd]
+                    l_coord2 = [l_coord2, l_flow_bwd]
+                    l_loss, l_pos_num_list = model(l_im1, l_im2, l_coord1, l_coord2,
+                                                   is_update_momentum=False)
+                    loss += l_loss
+                    loss_num += 1
+                    flow_id += 1
+
+                    with torch.no_grad():
+                        l_pos_num_list_1, l_pos_num_list_2 = l_pos_num_list
+                        l_pos_nums_1, l_pos_means_1 = l_pos_num_list_1
+                        l_pos_nums_2, l_pos_means_2 = l_pos_num_list_2
+                        pos_nums_1_list.append(l_pos_nums_1)
+                        pos_nums_2_list.append(l_pos_nums_2)
+                        pos_means_1_list.append(l_pos_means_1)
+                        pos_means_2_list.append(l_pos_means_2)
+
+            loss = loss / loss_num
+            with torch.no_grad():
+                pos_nums_1 = torch.stack(pos_nums_1_list).sum(0)
+                pos_nums_2 = torch.stack(pos_nums_2_list).sum(0)
+                pos_means_1 = torch.stack(pos_means_1_list).mean(0)
+                pos_means_2 = torch.stack(pos_means_2_list).mean(0)
+                pos_num_list_1 = [pos_nums_1, pos_means_1]
+                pos_num_list_2 = [pos_nums_2, pos_means_2]
+                pos_num_list = [pos_num_list_1, pos_num_list_2]
+            # # check model k not inc check
+            # with torch.no_grad():
+            #     print("after model, k:", model.module.k, model.module.K, idx, flow_id)
 
         # backward
         optimizer.zero_grad()
