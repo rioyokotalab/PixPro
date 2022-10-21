@@ -72,8 +72,7 @@ class MyHelpFormatter(argparse.MetavarTypeHelpFormatter, argparse.ArgumentDefaul
 
 # optical flow utils
 @torch.no_grad()
-def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False,
-                      use_flow_frames=True):
+def calc_optical_flow(imgs, flow_model, up=False, verbose=False):
     num_img = len(imgs)
     assert num_img >= 2
     if verbose:
@@ -90,16 +89,15 @@ def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False,
     ])
     flow_fwds = flow_fwds.cuda()
     flow_bwds = flow_bwds.cuda()
-    flow_fwd, flow_bwd = all_concat_flow(flow_fwds, flow_bwds, is_norm, use_flow_frames)
 
     if verbose:
         rank = dist.get_rank()
         print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
         print(f"rank: {rank} orig_im1: {orig_im1.shape}", orig_im1.tolist())
         print(f"rank: {rank} orig_im2: {orig_im2.shape}", orig_im2.tolist())
-        print(f"rank: {rank} flow_fwd: {flow_fwd.shape}", flow_fwd.tolist())
-        print(f"rank: {rank} flow_bwd: {flow_bwd.shape}", flow_bwd.tolist())
-    return flow_fwd, flow_bwd
+        print(f"rank: {rank} flow_fwds: {flow_fwds.shape}", flow_fwds.tolist())
+        print(f"rank: {rank} flow_bwds: {flow_bwds.shape}", flow_bwds.tolist())
+    return flow_fwds, flow_bwds
 
 
 def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
@@ -126,14 +124,9 @@ def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
     return flow_fwd, flow_bwd
 
 
-@torch.no_grad()
-def apply_optical_flow(data, flow_model, args):
-    orig_imgs = data[6]
+def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
     orig_im1 = orig_imgs[0]
-    num_img = len(orig_imgs)
-    size = torch.tensor(orig_im1.shape[-2:]).cuda()
     bs = orig_im1.shape[0]
-    is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
     is_use_flow_frames = args.use_flow_frames and num_img > 2
     # to reduce memory usage
     flow_fwds, flow_bwds = [], []
@@ -143,20 +136,22 @@ def apply_optical_flow(data, flow_model, args):
     s_index = bs % flow_bs
     if s_index != 0:
         l_orig_imgs = [im[0:s_index] for im in orig_imgs]
-        flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs,
-                                               flow_model, is_norm=args.flow_cat_norm,
-                                               up=args.flow_up, verbose=args.verbose,
-                                               use_flow_frames=is_use_flow_frames)
+        flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs, flow_model,
+                                               up=args.flow_up, verbose=args.verbose)
+        flow_fwd, flow_bwd = all_concat_flow(flow_fwd, flow_bwd,
+                                             is_norm=args.flow_cat_norm,
+                                             use_flow_frames=is_use_flow_frames)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     for i in range(s_index, bs, flow_bs):
         if i + flow_bs > bs:
             break
         l_orig_imgs = [im[i:i+flow_bs] for im in orig_imgs]
-        flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs,
-                                               flow_model, is_norm=args.flow_cat_norm,
-                                               up=args.flow_up, verbose=args.verbose,
-                                               use_flow_frames=is_use_flow_frames)
+        flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs, flow_model,
+                                               up=args.flow_up, verbose=args.verbose)
+        flow_fwd, flow_bwd = all_concat_flow(flow_fwd, flow_bwd,
+                                             is_norm=args.flow_cat_norm,
+                                             use_flow_frames=is_use_flow_frames)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     ndim = flow_fwds[0].ndim
@@ -170,6 +165,20 @@ def apply_optical_flow(data, flow_model, args):
     if ndim == 4:
         flow_fwd = flow_fwd.unsqueeze(0)
         flow_bwd = flow_bwd.unsqueeze(0)
+    return flow_fwd, flow_bwd
+
+
+@torch.no_grad()
+def apply_optical_flow(data, flow_model, args):
+    orig_imgs = data[6]
+    orig_im1 = orig_imgs[0]
+    num_img = len(orig_imgs)
+    size = torch.tensor(orig_im1.shape[-2:]).cuda()
+    bs = orig_im1.shape[0]
+    is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
+    is_use_flow_frames = args.use_flow_frames and num_img > 2
+    # to reduce memory usage
+    flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args)
 
     mask_fwd, mask_bwd = None, None
     if is_mask_flow:
