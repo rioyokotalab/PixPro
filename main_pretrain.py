@@ -423,7 +423,7 @@ def main_prog(opt):
 
     main(opt)
 
-    if rank == 0:
+    if rank == 0 and not opt.debug:
         tf_path = glob.glob(os.path.join(opt.output_dir, "events.*"))
         for l_tf_path in tf_path:
             wandb.save(l_tf_path, base_path=opt.output_dir)
