@@ -28,7 +28,7 @@ def parse_option(stage='pre-train'):
 
     # RAFT
     parser.add_argument('--use_flow', action='store_true')
-    parser.add_argument('--flow_model', default="", help=r"raft model path")
+    parser.add_argument('--flow_model', default="", help="raft model path")
     parser.add_argument('--flow_up', action='store_true')
     parser.add_argument('--alpha1', type=float, default=None, help='alpha1 for cycle consistency')
     parser.add_argument('--alpha2', type=float, default=None, help='alpha2 for cycle consistency')

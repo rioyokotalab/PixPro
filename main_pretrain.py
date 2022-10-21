@@ -363,6 +363,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             summary_writer.add_scalar('lr', lr, step)
             summary_writer.add_scalar('loss', loss_meter.val, step)
             summary_writer.add_scalar('loss/plus', loss_plus, step)
+            summary_writer.add_scalar('time', batch_time.val, step)
             summary_writer.add_scalar(name_pos_num, pos_num, step)
             summary_writer.add_scalar(name_pos_mean, pos_mean, step)
             summary_writer.add_scalar(name_pos_num_1, pos_num_1, step)

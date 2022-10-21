@@ -72,7 +72,8 @@ class MyHelpFormatter(argparse.MetavarTypeHelpFormatter, argparse.ArgumentDefaul
 
 # optical flow utils
 @torch.no_grad()
-def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False):
+def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False,
+                      use_flow_frames=True):
     num_img = len(imgs)
     assert num_img >= 2
     if verbose:
@@ -89,6 +90,24 @@ def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False):
     ])
     flow_fwds = flow_fwds.cuda()
     flow_bwds = flow_bwds.cuda()
+    flow_fwd, flow_bwd = all_concat_flow(flow_fwds, flow_bwds, is_norm, use_flow_frames)
+
+    if verbose:
+        rank = dist.get_rank()
+        print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
+        print(f"rank: {rank} orig_im1: {orig_im1.shape}", orig_im1.tolist())
+        print(f"rank: {rank} orig_im2: {orig_im2.shape}", orig_im2.tolist())
+        print(f"rank: {rank} flow_fwd: {flow_fwd.shape}", flow_fwd.tolist())
+        print(f"rank: {rank} flow_bwd: {flow_bwd.shape}", flow_bwd.tolist())
+    return flow_fwd, flow_bwd
+
+
+def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
+    if not use_flow_frames:
+        flow_fwd = concat_flow(flow_fwds, is_norm)
+        flow_bwd = concat_flow(flow_bwds, is_norm)
+        return flow_fwd, flow_bwd
+
     num_flow = flow_bwds.shape[0]
     tmp_fwd_list, tmp_bwd_list = [], []
     for i in range(num_flow):
@@ -104,14 +123,6 @@ def calc_optical_flow(imgs, flow_model, is_norm=False, up=False, verbose=False):
             tmp_bwd_list.append(tmp_bwd)
     flow_fwd = torch.stack(tmp_fwd_list)
     flow_bwd = torch.stack(tmp_bwd_list)
-
-    if verbose:
-        rank = dist.get_rank()
-        print(f"rank: {rank} orig_im1: {orig_im1.dtype} orig_im2: {orig_im2.dtype}")
-        print(f"rank: {rank} orig_im1: {orig_im1.shape}", orig_im1.tolist())
-        print(f"rank: {rank} orig_im2: {orig_im2.shape}", orig_im2.tolist())
-        print(f"rank: {rank} flow_fwd: {flow_fwd.shape}", flow_fwd.tolist())
-        print(f"rank: {rank} flow_bwd: {flow_bwd.shape}", flow_bwd.tolist())
     return flow_fwd, flow_bwd
 
 
@@ -123,6 +134,7 @@ def apply_optical_flow(data, flow_model, args):
     size = torch.tensor(orig_im1.shape[-2:]).cuda()
     bs = orig_im1.shape[0]
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
+    is_use_flow_frames = args.use_flow_frames and num_img > 2
     # to reduce memory usage
     flow_fwds, flow_bwds = [], []
     flow_bs = 8
@@ -133,7 +145,8 @@ def apply_optical_flow(data, flow_model, args):
         l_orig_imgs = [im[0:s_index] for im in orig_imgs]
         flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs,
                                                flow_model, is_norm=args.flow_cat_norm,
-                                               up=args.flow_up, verbose=args.verbose)
+                                               up=args.flow_up, verbose=args.verbose,
+                                               use_flow_frames=is_use_flow_frames)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     for i in range(s_index, bs, flow_bs):
@@ -142,7 +155,8 @@ def apply_optical_flow(data, flow_model, args):
         l_orig_imgs = [im[i:i+flow_bs] for im in orig_imgs]
         flow_fwd, flow_bwd = calc_optical_flow(l_orig_imgs,
                                                flow_model, is_norm=args.flow_cat_norm,
-                                               up=args.flow_up, verbose=args.verbose)
+                                               up=args.flow_up, verbose=args.verbose,
+                                               use_flow_frames=is_use_flow_frames)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     ndim = flow_fwds[0].ndim
@@ -184,8 +198,6 @@ def apply_optical_flow(data, flow_model, args):
         flow_fwd = torch.stack([denormalize_flow(f) for f in flow_fwd])
         flow_bwd = torch.stack([denormalize_flow(f) for f in flow_bwd])
 
-    is_use_flow_frames = hasattr(args, "use_flow_frames") and args.use_flow_frames
-    is_use_flow_frames = is_use_flow_frames and num_img > 2
     if not is_use_flow_frames:
         flow_fwd, flow_bwd = flow_fwd[-1], flow_bwd[-1]
         if mask_fwd is None or mask_bwd is None:
