@@ -337,6 +337,12 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             pos_mean = (pos_mean_1 + pos_mean_2) / 2.0
 
         if idx % args.print_freq == 0:
+            if torch.cuda.is_available():
+                max_mem_mb = torch.cuda.max_memory_allocated() / 1024.0 / 1024.0
+                max_mem_str = f"max_mem: {max_mem_mb:.0f}M"
+            else:
+                max_mem_mb = None
+                max_mem_str = ""
             mask_ratio_str = ''
             if is_mask_flow:
                 mask_ratio_str = f'mask ratio {r:07.3%}'
@@ -347,7 +353,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 f'lr {lr:.3f}  '
                 f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f}) [{loss_plus:.3f}] '
                 f'pos_num {pos_num:.4g} ({pos_mean:07.3%}) '
-                f'{mask_ratio_str}')
+                f'{mask_ratio_str} {max_mem_str}')
 
         if args.debug:
             continue
