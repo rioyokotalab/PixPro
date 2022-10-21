@@ -35,6 +35,10 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--flow_cat_norm', action='store_true', help='normalize flow after calc flow')
     parser.add_argument('--flow_bs', type=int, default=None, help='flow num for calc optical flow / 1gpu')
     parser.add_argument('--use_flow_frames', action='store_true', help='use flow frames which is less than n_frame flow')
+    parser.add_argument('--use_flow_file', action='store_true', help='get flow value by loading file')
+    parser.add_argument('--flow_root', type=str, default='', help='dataset for flow director')
+    parser.add_argument('--fwd_name', type=str, default='', help='flow fwd path name')
+    parser.add_argument('--bwd_name', type=str, default='', help='flow bwd path name')
 
     if stage == 'linear':
         parser.add_argument('--total-batch-size', type=int, default=256, help='total train batch size for all GPU')

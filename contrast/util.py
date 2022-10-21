@@ -4,6 +4,8 @@ import torch
 import torch.distributed as dist
 import torch.nn.functional as F
 
+from .flow import upflow8
+
 
 class AverageMeter(object):
     """Computes and stores the average and current value"""
@@ -177,8 +179,30 @@ def apply_optical_flow(data, flow_model, args):
     size = torch.tensor(orig_im1.shape[-2:]).cuda()
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
     is_use_flow_frames = args.use_flow_frames and num_img > 2
-    # to reduce memory usage
-    flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args)
+    if args.use_flow_file:
+        _, flow_fwds, flow_bwds = data[5]
+        # transpose nb, num, 2, h, w -> num, nb, 2, h, w
+        flow_fwds = flow_fwds.permute(1, 0, 2, 3, 4)
+        flow_bwds = flow_bwds.permute(1, 0, 2, 3, 4)
+        if args.flow_up:
+            num, nb, c, h, w = flow_fwds.shape
+            flow_fwds = upflow8(flow_fwds.reshape(-1, c, h, w))
+            flow_bwds = upflow8(flow_bwds.reshape(-1, c, h, w))
+            _, new_c, new_h, new_w = flow_fwds.shape
+            flow_fwds = flow_fwds.reshape(num, nb, new_c, new_h, new_w)
+            flow_bwds = flow_bwds.reshape(num, nb, new_c, new_h, new_w)
+        flow_fwd, flow_bwd = all_concat_flow(flow_fwds, flow_bwds,
+                                             is_norm=args.flow_cat_norm,
+                                             use_flow_frames=is_use_flow_frames)
+        ndim = flow_fwd.ndim
+        flow_fwd = flow_fwd.cuda()
+        flow_bwd = flow_bwd.cuda()
+        if ndim == 4:
+            flow_fwd = flow_fwd.unsqueeze(0)
+            flow_bwd = flow_bwd.unsqueeze(0)
+    else:
+        # to reduce memory usage
+        flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args)
 
     mask_fwd, mask_bwd = None, None
     if is_mask_flow:

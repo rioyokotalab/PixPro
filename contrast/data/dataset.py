@@ -33,7 +33,8 @@ def find_classes(dir):
     return classes, class_to_idx
 
 
-def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1):
+def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1,
+                 flow_file_root_list=["", ""]):
     images = []
     dir = os.path.expanduser(dir)
     for target in sorted(os.listdir(dir)):
@@ -56,12 +57,14 @@ def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1):
             images.append(videos)
 
     if is_bdd100k:
-        images = VideoSample(images, n_frames=n_frames)
+        images = VideoSample(images, n_frames=n_frames,
+                             flow_file_root_list=flow_file_root_list)
 
     return images
 
 
-def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet', n_frames=1):
+def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet',
+                          n_frames=1, flow_file_root_list=["", ""]):
     images = []
 
     # make COCO dataset
@@ -108,16 +111,23 @@ def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet', 
     if is_bdd100k:
         if len(videos) > 0:
             images.append(videos)
-        images = VideoSample(images, n_frames=n_frames)
+        images = VideoSample(images, n_frames=n_frames,
+                             flow_file_root_list=flow_file_root_list)
 
     return images
 
 
 class VideoSample(data.Dataset):
-    def __init__(self, samples, n_frames=1):
+    def __init__(self, samples, n_frames=1, flow_file_root_list=["", ""]):
         super().__init__()
         self.samples = samples
         self.n_frames = n_frames
+        assert isinstance(flow_file_root_list, (tuple, list))
+        self.flow_fwd_root, self.flow_bwd_root = flow_file_root_list
+        is_fwd_path = self.flow_fwd_root is not None and self.flow_fwd_root != ""
+        is_bwd_path = self.flow_bwd_root is not None and self.flow_bwd_root != ""
+        self.use_flow_file = is_fwd_path and is_bwd_path
+        self.ext = ".pth"
 
     def __getitem__(self, index):
         video = self.samples[index]
@@ -126,6 +136,23 @@ class VideoSample(data.Dataset):
         len_img = n_video - n_frames
         local_i = random.randint(0, len_img)
         path, target = video[local_i]
+
+        if self.use_flow_file:
+            video_name_str = os.path.basename(os.path.dirname(path)) + self.ext
+            fwd_path = os.path.join(self.flow_fwd_root, video_name_str)
+            bwd_path = os.path.join(self.flow_bwd_root, video_name_str)
+            if not os.path.isfile(fwd_path):
+                raise FileNotFoundError(f"not exist path fwd path {fwd_path}")
+            if not os.path.isfile(bwd_path):
+                raise FileNotFoundError(f"not exist path bwd path {bwd_path}")
+            flow_fwd_tmp = torch.load(fwd_path, map_location="cpu")
+            flow_bwd_tmp = torch.load(bwd_path, map_location="cpu")
+            num_flow = flow_fwd_tmp.shape[0]
+            flow_frames = n_frames - 1
+            bwd_n_idx = num_flow - local_i
+            bwd_s_idx = bwd_n_idx - flow_frames
+            flow_fwd = flow_fwd_tmp[local_i:local_i+flow_frames].clone()
+            flow_bwd = flow_bwd_tmp[bwd_s_idx:bwd_n_idx].clone()
 
         if self.n_frames > 1:
             if n_frames <= 1:
@@ -137,6 +164,9 @@ class VideoSample(data.Dataset):
                 next_path, next_target = video[next_local_i]
                 path.append(next_path)
                 target.append(next_target)
+
+        if self.use_flow_file:
+            target = [target, [flow_fwd, flow_bwd]]
 
         return path, target
 
@@ -165,19 +195,22 @@ class DatasetFolder(data.Dataset):
         samples (list): List of (sample path, class_index) tuples
     """
 
-    def __init__(self, root, loader, extensions, ann_file='', img_prefix='', transform=None, target_transform=None,
-                 cache_mode="no", dataset='ImageNet', n_frames=1):
+    def __init__(self, root, loader, extensions, ann_file='', img_prefix='',
+                 transform=None, target_transform=None, cache_mode="no",
+                 dataset='ImageNet', n_frames=1, flow_file_root_list=["", ""]):
         # image folder mode
         if ann_file == '':
             _, class_to_idx = find_classes(root)
-            samples = make_dataset(root, class_to_idx, extensions, dataset == "bdd100k", n_frames)
+            samples = make_dataset(root, class_to_idx, extensions, dataset == "bdd100k",
+                                   n_frames, flow_file_root_list)
         # zip mode
         else:
             samples = make_dataset_with_ann(os.path.join(root, ann_file),
                                             os.path.join(root, img_prefix),
                                             extensions,
                                             dataset,
-                                            n_frames)
+                                            n_frames,
+                                            flow_file_root_list)
 
         if len(samples) == 0:
             raise(RuntimeError("Found 0 files in subfolders of: " + root + "\n"
@@ -188,7 +221,8 @@ class DatasetFolder(data.Dataset):
         self.extensions = extensions
 
         self.samples = samples
-        self.labels = [y_1k if not isinstance(y_1k, list) else y_1k[0] for _, y_1k in samples]
+        self.labels = [y_1k[0] if isinstance(y_1k, list) else y_1k for _, y_1k in samples]
+        self.labels = [y_1k[0] if isinstance(y_1k, list) else y_1k for y_1k in self.labels]
         self.classes = list(set(self.labels))
 
         self.transform = transform
@@ -318,18 +352,28 @@ class ImageFolder(DatasetFolder):
         imgs (list): List of (image path, class_index) tuples
     """
 
-    def __init__(self, root, ann_file='', img_prefix='', transform=None, target_transform=None,
-                 loader=default_img_loader, cache_mode="no", dataset='ImageNet',
-                 two_crop=False, return_coord=False, n_frames=1):
+    def __init__(self, root, ann_file='', img_prefix='', transform=None,
+                 target_transform=None, loader=default_img_loader,
+                 cache_mode="no", dataset='ImageNet', two_crop=False,
+                 return_coord=False, n_frames=1, flow_file_root_list=["", ""]):
         if n_frames > 1 and dataset == "bdd100k":
             loader = default_imgs_loader
         super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
                                           ann_file=ann_file, img_prefix=img_prefix,
-                                          transform=transform, target_transform=target_transform,
-                                          cache_mode=cache_mode, dataset=dataset, n_frames=n_frames)
+                                          transform=transform,
+                                          target_transform=target_transform,
+                                          cache_mode=cache_mode, dataset=dataset,
+                                          n_frames=n_frames,
+                                          flow_file_root_list=flow_file_root_list)
         self.imgs = self.samples
         self.two_crop = two_crop
         self.return_coord = return_coord
+
+        # use flow file (ext is .pth)
+        flow_fwd_root, flow_bwd_root = flow_file_root_list
+        is_fwd_path = flow_fwd_root is not None and flow_fwd_root != ""
+        is_bwd_path = flow_bwd_root is not None and flow_bwd_root != ""
+        self.use_flow_file = is_fwd_path and is_bwd_path
 
     def __getitem__(self, index):
         """
@@ -343,6 +387,8 @@ class ImageFolder(DatasetFolder):
         if not isinstance(images, list):
             images = [images]
         if isinstance(target, list):
+            if self.use_flow_file:
+                target, flows = target
             target = target[0]
 
         if self.transform is not None:
@@ -395,6 +441,10 @@ class ImageFolder(DatasetFolder):
                     coord2_list.append(img2[1])
                 else:
                     img2_list.append(img2)
+
+        if self.use_flow_file and self.two_crop:
+            flow_fwd, flow_bwd = flows
+            target = [target, flow_fwd, flow_bwd]
 
         orig_imgs = [load_img_for_raft(image) for image in images]
         if self.return_coord:

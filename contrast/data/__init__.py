@@ -12,6 +12,25 @@ from .dataset import ImageFolder
 def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=False):
     transform = get_transform(aug_type, args.crop, args.image_size, args.crop_ratio)
 
+    # use flow file
+    fwd_path, bwd_path = "", ""
+    if args.use_flow_file:
+        flow_root = args.flow_root
+        if flow_root is None or flow_root == "":
+            flow_root = os.path.dirname(args.data_dir)
+            flow_root = os.path.join(flow_root, "flow", "pth")
+        flow_root = os.path.join(flow_root, prefix)
+
+        fwd_name, bwd_name = args.fwd_name, args.bwd_name
+        if fwd_name is None or fwd_name == "":
+            fwd_name = "forward"
+        if bwd_name is None or bwd_name == "":
+            bwd_name = "backward"
+
+        fwd_path = os.path.join(flow_root, fwd_name)
+        bwd_path = os.path.join(flow_root, bwd_name)
+    flow_file_root_list = [fwd_path, bwd_path]
+
     # dataset
     if args.zip:
         if args.dataset == 'ImageNet' or args.dataset == "bdd100k":
@@ -29,7 +48,8 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             cache_mode=args.cache_mode,
             dataset=args.dataset,
             return_coord=return_coord,
-            n_frames=args.n_frames)
+            n_frames=args.n_frames,
+            flow_file_root_list=flow_file_root_list)
     else:
         train_folder = os.path.join(args.data_dir, prefix)
         train_dataset = ImageFolder(
@@ -38,7 +58,8 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             two_crop=two_crop,
             dataset=args.dataset,
             return_coord=return_coord,
-            n_frames=args.n_frames)
+            n_frames=args.n_frames,
+            flow_file_root_list=flow_file_root_list)
 
     # sampler
     indices = np.arange(dist.get_rank(), len(train_dataset), dist.get_world_size())
