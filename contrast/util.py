@@ -126,6 +126,7 @@ def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
 
 def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
     orig_im1 = orig_imgs[0]
+    num_img = len(orig_imgs)
     bs = orig_im1.shape[0]
     is_use_flow_frames = args.use_flow_frames and num_img > 2
     # to reduce memory usage
@@ -174,7 +175,6 @@ def apply_optical_flow(data, flow_model, args):
     orig_im1 = orig_imgs[0]
     num_img = len(orig_imgs)
     size = torch.tensor(orig_im1.shape[-2:]).cuda()
-    bs = orig_im1.shape[0]
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
     is_use_flow_frames = args.use_flow_frames and num_img > 2
     # to reduce memory usage
