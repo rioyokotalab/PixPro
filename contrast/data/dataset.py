@@ -145,14 +145,21 @@ class VideoSample(data.Dataset):
                 raise FileNotFoundError(f"not exist path fwd path {fwd_path}")
             if not os.path.isfile(bwd_path):
                 raise FileNotFoundError(f"not exist path bwd path {bwd_path}")
-            flow_fwd_tmp = torch.load(fwd_path, map_location="cpu")
-            flow_bwd_tmp = torch.load(bwd_path, map_location="cpu")
-            num_flow = flow_fwd_tmp.shape[0]
+            num_flow = n_video - 1
             flow_frames = n_frames - 1
+            fwd_s_idx = local_i
+            fwd_n_idx = fwd_s_idx + flow_frames
             bwd_n_idx = num_flow - local_i
             bwd_s_idx = bwd_n_idx - flow_frames
-            flow_fwd = flow_fwd_tmp[local_i:local_i+flow_frames].clone()
-            flow_bwd = flow_bwd_tmp[bwd_s_idx:bwd_n_idx].clone()
+            # flow_fwd_tmp = torch.load(fwd_path, map_location="cpu")
+            # flow_bwd_tmp = torch.load(bwd_path, map_location="cpu")
+            # num_flow = flow_fwd_tmp.shape[0]
+            # flow_fwd = flow_fwd_tmp[fwd_s_idx:fwd_n_idx].clone()
+            # flow_bwd = flow_bwd_tmp[bwd_s_idx:bwd_n_idx].clone()
+            # flows = [flow_fwd, flow_bwd]
+            fwd_path = [fwd_path, fwd_s_idx, fwd_n_idx]
+            bwd_path = [bwd_path, bwd_s_idx, bwd_n_idx]
+            flows = [fwd_path, bwd_path]
 
         if self.n_frames > 1:
             if n_frames <= 1:
@@ -166,7 +173,7 @@ class VideoSample(data.Dataset):
                 target.append(next_target)
 
         if self.use_flow_file:
-            target = [target, [flow_fwd, flow_bwd]]
+            target = [target, flows]
 
         return path, target
 
@@ -333,6 +340,17 @@ def load_img_for_raft(img: Image):
     return img
 
 
+def load_flow(path, s_idx, n_idx):
+    b_name = os.path.basename(path)
+    ext = os.path.splitext(b_name)[-1]
+    if ext == ".pth":
+        flow_tmp = torch.load(path, map_location="cpu")
+        flow = flow_tmp[s_idx:n_idx]
+    else:
+        raise NotImplementedError(f"{ext} is not supported!!")
+    return flow
+
+
 class ImageFolder(DatasetFolder):
     """A generic data loader where the images are arranged in this way: ::
         root/dog/xxx.png
@@ -443,6 +461,7 @@ class ImageFolder(DatasetFolder):
                     img2_list.append(img2)
 
         if self.use_flow_file and self.two_crop:
+            flows = [load_flow(*f_path) for f_path in flows]
             flow_fwd, flow_bwd = flows
             target = [target, flow_fwd, flow_bwd]
 

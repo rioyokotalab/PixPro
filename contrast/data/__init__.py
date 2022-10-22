@@ -20,12 +20,14 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             flow_root = os.path.dirname(args.data_dir)
             flow_root = os.path.join(flow_root, "flow", "pth")
         flow_root = os.path.join(flow_root, prefix)
+        args.flow_root = flow_root
 
         fwd_name, bwd_name = args.fwd_name, args.bwd_name
         if fwd_name is None or fwd_name == "":
             fwd_name = "forward"
         if bwd_name is None or bwd_name == "":
             bwd_name = "backward"
+        args.fwd_name, args.bwd_name = fwd_name, bwd_name
 
         fwd_path = os.path.join(flow_root, fwd_name)
         bwd_path = os.path.join(flow_root, bwd_name)
