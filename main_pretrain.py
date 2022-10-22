@@ -41,15 +41,21 @@ def build_model(args):
     model = models.__dict__[args.model](encoder, args).cuda()
 
     if args.use_flow:
-        flow_model = torch.nn.DataParallel(RAFT(args))
-        weights = torch.load(args.flow_model, map_location="cpu")
-        flow_model.load_state_dict(weights)
-        flow_model = flow_model.module.cuda()
-        flow_model = DistributedDataParallel(flow_model, device_ids=[args.local_rank],
-                                             broadcast_buffers=False)
-        flow_model.eval()
-        for param in flow_model.parameters():
-            param.requires_grad = False
+        if args.use_flow_file:
+            flow_model = None
+        else:
+            if args.flow_model is None or not os.path.isfile(args.flow_model):
+                raise FileNotFoundError(f"not exit flow model path {args.flow_model}")
+            flow_model = torch.nn.DataParallel(RAFT(args))
+            weights = torch.load(args.flow_model, map_location="cpu")
+            flow_model.load_state_dict(weights)
+            flow_model = flow_model.module.cuda()
+            flow_model = DistributedDataParallel(flow_model,
+                                                 device_ids=[args.local_rank],
+                                                 broadcast_buffers=False)
+            flow_model.eval()
+            for param in flow_model.parameters():
+                param.requires_grad = False
 
     if args.optimizer == 'sgd':
         optimizer = torch.optim.SGD(
