@@ -196,7 +196,8 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
     if args.use_flow:
         model, flow_model = model
-        flow_model.eval()
+        if flow_model is not None:
+            flow_model.eval()
     else:
         model = model[0]
     model.train()
