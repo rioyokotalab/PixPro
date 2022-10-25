@@ -366,7 +366,7 @@ def load_flows(fwd_pathes, bwd_pathes):
     bwd_path, bwd_s_idx_src, bwd_n_idx_src = bwd_pathes
     flow_fwd, num_flow = load_flow(*fwd_pathes, return_num=True)
     bwd_s_idx, bwd_n_idx = calc_bwd_idx(fwd_s_idx, fwd_n_idx, num_flow)
-    flow_bwd = load_flow(bwd_path, bwd_s_idx, bwd_n_idx)
+    flow_bwd = load_flow(bwd_path, bwd_s_idx, bwd_n_idx, return_num=False)
     return flow_fwd, flow_bwd
 
 
