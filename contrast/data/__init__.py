@@ -51,7 +51,9 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             dataset=args.dataset,
             return_coord=return_coord,
             n_frames=args.n_frames,
-            flow_file_root_list=flow_file_root_list)
+            flow_file_root_list=flow_file_root_list,
+            use_flow_frames=args.use_flow_frames,
+            debug=args.debug)
     else:
         train_folder = os.path.join(args.data_dir, prefix)
         train_dataset = ImageFolder(
@@ -61,7 +63,9 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             dataset=args.dataset,
             return_coord=return_coord,
             n_frames=args.n_frames,
-            flow_file_root_list=flow_file_root_list)
+            flow_file_root_list=flow_file_root_list,
+            use_flow_frames=args.use_flow_frames,
+            debug=args.debug)
 
     # sampler
     indices = np.arange(dist.get_rank(), len(train_dataset), dist.get_world_size())

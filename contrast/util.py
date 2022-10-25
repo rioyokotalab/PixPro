@@ -173,10 +173,8 @@ def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
 
 @torch.no_grad()
 def apply_optical_flow(data, flow_model, args):
-    orig_imgs = data[6]
-    orig_im1 = orig_imgs[0]
-    num_img = len(orig_imgs)
-    size = torch.tensor(orig_im1.shape[-2:]).cuda()
+    orig_imgs_tmp = data[6]
+    size, num_img = orig_imgs_tmp[0][0], orig_imgs_tmp[1][0].item()
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
     is_use_flow_frames = args.use_flow_frames and num_img > 2
     if args.use_flow_file:
@@ -201,6 +199,7 @@ def apply_optical_flow(data, flow_model, args):
             flow_fwd = flow_fwd.unsqueeze(0)
             flow_bwd = flow_bwd.unsqueeze(0)
     else:
+        orig_imgs = orig_imgs_tmp[2:]
         # to reduce memory usage
         flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args)
 

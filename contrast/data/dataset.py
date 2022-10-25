@@ -340,15 +340,34 @@ def load_img_for_raft(img: Image):
     return img
 
 
-def load_flow(path, s_idx, n_idx):
+def load_flow(path, s_idx, n_idx, return_num=True):
     b_name = os.path.basename(path)
     ext = os.path.splitext(b_name)[-1]
     if ext == ".pth":
         flow_tmp = torch.load(path, map_location="cpu")
+        num_flow = flow_tmp.shape[0]
         flow = flow_tmp[s_idx:n_idx]
     else:
         raise NotImplementedError(f"{ext} is not supported!!")
+    if return_num:
+        return flow, num_flow
     return flow
+
+
+def calc_bwd_idx(fwd_s_idx, fwd_n_idx, num_flow):
+    flow_frames = fwd_n_idx - fwd_s_idx
+    bwd_n_idx = num_flow - fwd_s_idx
+    bwd_s_idx = bwd_n_idx - flow_frames
+    return bwd_s_idx, bwd_n_idx
+
+
+def load_flows(fwd_pathes, bwd_pathes):
+    _, fwd_s_idx, fwd_n_idx = fwd_pathes
+    bwd_path, bwd_s_idx_src, bwd_n_idx_src = bwd_pathes
+    flow_fwd, num_flow = load_flow(*fwd_pathes, return_num=True)
+    bwd_s_idx, bwd_n_idx = calc_bwd_idx(fwd_s_idx, fwd_n_idx, num_flow)
+    flow_bwd = load_flow(bwd_path, bwd_s_idx, bwd_n_idx)
+    return flow_fwd, flow_bwd
 
 
 class ImageFolder(DatasetFolder):
@@ -373,7 +392,8 @@ class ImageFolder(DatasetFolder):
     def __init__(self, root, ann_file='', img_prefix='', transform=None,
                  target_transform=None, loader=default_img_loader,
                  cache_mode="no", dataset='ImageNet', two_crop=False,
-                 return_coord=False, n_frames=1, flow_file_root_list=["", ""]):
+                 return_coord=False, n_frames=1, flow_file_root_list=["", ""],
+                 use_flow_frames=False, debug=False):
         if n_frames > 1 and dataset == "bdd100k":
             loader = default_imgs_loader
         super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
@@ -386,6 +406,8 @@ class ImageFolder(DatasetFolder):
         self.imgs = self.samples
         self.two_crop = two_crop
         self.return_coord = return_coord
+        self.use_flow_frames = use_flow_frames
+        self.debug = debug
 
         # use flow file (ext is .pth)
         flow_fwd_root, flow_bwd_root = flow_file_root_list
@@ -426,7 +448,7 @@ class ImageFolder(DatasetFolder):
             else:
                 img2 = self.transform(images[-1])
 
-        if self.two_crop:
+        if self.two_crop and self.use_flow_frames:
             is_two_trans = isinstance(self.transform, tuple)
             is_two_trans = is_two_trans and len(self.transform) == 2
             img_list, coord_list = [], []
@@ -461,11 +483,17 @@ class ImageFolder(DatasetFolder):
                     img2_list.append(img2)
 
         if self.use_flow_file and self.two_crop:
-            flows = [load_flow(*f_path) for f_path in flows]
-            flow_fwd, flow_bwd = flows
+            fwd_path, bwd_path = flows
+            flow_fwd, flow_bwd = load_flows(fwd_path, bwd_path)
             target = [target, flow_fwd, flow_bwd]
 
-        orig_imgs = [load_img_for_raft(image) for image in images]
+        orig_im1 = images[0]
+        size = torch.tensor(orig_im1.size[-2:][::-1])
+        num_img = torch.tensor([len(images)])
+        orig_imgs = [size, num_img]
+        if not self.use_flow_file or self.debug or not self.two_crop:
+            orig_imgs.extend([load_img_for_raft(image) for image in images])
+
         if self.return_coord:
             assert isinstance(img, tuple)
             img, coord = img
@@ -473,7 +501,8 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 img2, coord2 = img2
                 out_data = [img, img2, coord, coord2, index, target, orig_imgs]
-                out_data.extend([img_list, img2_list, coord_list, coord2_list])
+                if self.use_flow_frames:
+                    out_data.extend([img_list, img2_list, coord_list, coord2_list])
                 return out_data
             else:
                 return img, coord, index, target, orig_imgs
@@ -484,6 +513,9 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
-                return img, img2, index, target, orig_imgs, img_list, img2_list
+                out_data = [img, img2, index, target, orig_imgs]
+                if self.use_flow_frames:
+                    out_data.extend([img_list, img2_list])
+                return out_data
             else:
                 return img, index, target, orig_imgs
