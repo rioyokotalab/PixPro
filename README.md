@@ -116,6 +116,7 @@ conda install pytorch=1.4.0 cudatoolkit=10.1 torchvision -c pytorch -y
 # Install apex
 git clone https://github.com/NVIDIA/apex
 cd apex
+git checkout 8a7a332539809adcad88546f492945c4e752ff49
 pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
 cd ..
 
