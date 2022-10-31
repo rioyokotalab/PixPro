@@ -146,6 +146,7 @@ def main(args):
         if dist.get_rank() == 0 and (epoch % args.save_freq == 0 or epoch == args.epochs):
             save_checkpoint(args, epoch, model, optimizer, scheduler, sampler=train_loader.sampler)
 
+        torch.cuda.empty_cache()
         if epoch >= args.debug_epochs:
             break
 

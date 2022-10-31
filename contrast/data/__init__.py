@@ -29,7 +29,8 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             cache_mode=args.cache_mode,
             dataset=args.dataset,
             return_coord=return_coord,
-            n_frames=args.n_frames)
+            n_frames=args.n_frames,
+            debug=args.debug)
     else:
         train_folder = os.path.join(args.data_dir, prefix)
         train_dataset = ImageFolder(
@@ -38,7 +39,8 @@ def get_loader(aug_type, args, two_crop=False, prefix='train', return_coord=Fals
             two_crop=two_crop,
             dataset=args.dataset,
             return_coord=return_coord,
-            n_frames=args.n_frames)
+            n_frames=args.n_frames,
+            debug=args.debug)
 
     # sampler
     indices = np.arange(dist.get_rank(), len(train_dataset), dist.get_world_size())

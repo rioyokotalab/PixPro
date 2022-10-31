@@ -318,7 +318,7 @@ class ImageFolder(DatasetFolder):
 
     def __init__(self, root, ann_file='', img_prefix='', transform=None, target_transform=None,
                  loader=default_img_loader, cache_mode="no", dataset='ImageNet',
-                 two_crop=False, return_coord=False, n_frames=1):
+                 two_crop=False, return_coord=False, n_frames=1, debug=False):
         if n_frames > 1 and dataset == "bdd100k":
             loader = default_imgs_loader
         super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
@@ -328,6 +328,7 @@ class ImageFolder(DatasetFolder):
         self.imgs = self.samples
         self.two_crop = two_crop
         self.return_coord = return_coord
+        self.debug = debug
 
     def __getitem__(self, index):
         """
@@ -360,16 +361,24 @@ class ImageFolder(DatasetFolder):
             else:
                 img2 = self.transform(images[-1])
 
-        orig_imgs = [load_img_for_raft(image) for image in images]
+        if self.debug:
+            orig_imgs = [load_img_for_raft(image) for image in images]
+
         if self.return_coord:
             assert isinstance(img, tuple)
             img, coord = img
 
             if self.two_crop:
                 img2, coord2 = img2
-                return img, img2, coord, coord2, index, target, orig_imgs[0], orig_imgs[-1]
+                out_data = [img, img2, coord, coord2, index, target]
+                if self.debug:
+                    out_data.extend([orig_imgs[0], orig_imgs[-1]])
+                return out_data
             else:
-                return img, coord, index, target, orig_imgs[0]
+                out_data = [img, coord, index, target]
+                if self.debug:
+                    out_data.append(orig_imgs[0])
+                return out_data
         else:
             if isinstance(img, tuple):
                 img, coord = img
@@ -377,6 +386,12 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
-                return img, img2, index, target, orig_imgs[0], orig_imgs[-1]
+                out_data = [img, img2, index, target]
+                if self.debug:
+                    out_data.append([orig_imgs[0], orig_imgs[-1]])
+                return out_data
             else:
-                return img, index, target, orig_imgs[0]
+                out_data = [img, index, target]
+                if self.debug:
+                    out_data.append(orig_imgs[0])
+                return out_data
