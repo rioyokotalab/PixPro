@@ -256,6 +256,45 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss, pos_num_list = model(data[0], data[1], data[2], data[3])
 
+        loss_num = 1
+        # no raft pixpro
+        if len(data) >= 11:
+            pos_num_list_1, pos_num_list_2 = pos_num_list
+            pos_nums_1, pos_means_1 = pos_num_list_1
+            pos_nums_2, pos_means_2 = pos_num_list_2
+            pos_nums_1_list, pos_means_1_list = [pos_nums_1], []
+            pos_nums_2_list, pos_means_2_list = [pos_nums_2], []
+            im1_list, im2_list = data[7], data[8]
+            coord1_list, coord2_list = data[9], data[10]
+            num_img = len(im1_list)
+            # print(f"{loss_num=}, {num_img=} {pos_means_2.shape=}")
+            for img_idx in range(num_img):
+                l_im1, l_im2 = im1_list[img_idx], im2_list[img_idx]
+                l_coord1, l_coord2 = coord1_list[img_idx], coord2_list[img_idx]
+                l_loss, l_pos_num_list = model(l_im1, l_im2, l_coord1, l_coord2,
+                                               is_update_momentum=False)
+                loss += l_loss
+                loss_num += 1
+                with torch.no_grad():
+                    l_pos_num_list_1, l_pos_num_list_2 = l_pos_num_list
+                    l_pos_nums_1, l_pos_means_1 = l_pos_num_list_1
+                    l_pos_nums_2, l_pos_means_2 = l_pos_num_list_2
+                    pos_nums_1_list.append(l_pos_nums_1)
+                    pos_nums_2_list.append(l_pos_nums_2)
+                    pos_means_1_list.append(l_pos_means_1)
+                    pos_means_2_list.append(l_pos_means_2)
+
+            with torch.no_grad():
+                pos_nums_1 = torch.stack(pos_nums_1_list).sum(0)
+                pos_nums_2 = torch.stack(pos_nums_2_list).sum(0)
+                pos_means_1 = [torch.stack(pos_means_1_list).mean(0), pos_means_1]
+                pos_means_2 = [torch.stack(pos_means_2_list).mean(0), pos_means_2]
+                pos_means_1 = torch.stack(pos_means_1).mean(0)
+                pos_means_2 = torch.stack(pos_means_2).mean(0)
+                pos_num_list_1 = [pos_nums_1, pos_means_1]
+                pos_num_list_2 = [pos_nums_2, pos_means_2]
+                pos_num_list = [pos_num_list_1, pos_num_list_2]
+
         if is_use_flow_frames:
             assert flow_fwd_tmp.ndim == 5
             # In PixPro,
@@ -264,11 +303,12 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             pos_num_list_1, pos_num_list_2 = pos_num_list
             pos_nums_1, pos_means_1 = pos_num_list_1
             pos_nums_2, pos_means_2 = pos_num_list_2
-            pos_nums_1_list, pos_means_1_list = [pos_nums_1], [pos_means_1]
-            pos_nums_2_list, pos_means_2_list = [pos_nums_2], [pos_means_2]
-            loss_num = 1
+            pos_nums_1_list, pos_means_1_list = [pos_nums_1], []
+            pos_nums_2_list, pos_means_2_list = [pos_nums_2], []
             im1_list, im2_list = data[7], data[8]
             coord1_list, coord2_list = data[9], data[10]
+            im1_list, im2_list = im1_list[:-1], im2_list[1:]
+            coord1_list, coord2_list = coord1_list[:-1], coord2_list[1:]
             num_kind_frame = len(data[6]) - 1
             flow_id = 0
             for frame_idx in range(num_kind_frame - 1):
@@ -305,15 +345,19 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                         pos_means_1_list.append(l_pos_means_1)
                         pos_means_2_list.append(l_pos_means_2)
 
-            loss = loss / loss_num
             with torch.no_grad():
                 pos_nums_1 = torch.stack(pos_nums_1_list).sum(0)
                 pos_nums_2 = torch.stack(pos_nums_2_list).sum(0)
-                pos_means_1 = torch.stack(pos_means_1_list).mean(0)
-                pos_means_2 = torch.stack(pos_means_2_list).mean(0)
+                pos_means_1 = [torch.stack(pos_means_1_list).mean(0), pos_means_1]
+                pos_means_2 = [torch.stack(pos_means_2_list).mean(0), pos_means_2]
+                pos_means_1 = torch.stack(pos_means_1).mean(0)
+                pos_means_2 = torch.stack(pos_means_2).mean(0)
                 pos_num_list_1 = [pos_nums_1, pos_means_1]
                 pos_num_list_2 = [pos_nums_2, pos_means_2]
                 pos_num_list = [pos_num_list_1, pos_num_list_2]
+
+        # print(f"{loss_num=}, {args.pixpro_frames=}")
+        loss = loss / loss_num
 
         # backward
         optimizer.zero_grad()

@@ -396,7 +396,7 @@ class ImageFolder(DatasetFolder):
                  target_transform=None, loader=default_img_loader,
                  cache_mode="no", dataset='ImageNet', two_crop=False,
                  return_coord=False, n_frames=1, flow_file_root_list=["", ""],
-                 use_flow_frames=False, debug=False):
+                 use_flow_frames=False, debug=False, pixpro_frame=None):
         if n_frames > 1 and dataset == "bdd100k":
             loader = default_imgs_loader
         super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
@@ -417,6 +417,11 @@ class ImageFolder(DatasetFolder):
         is_fwd_path = flow_fwd_root is not None and flow_fwd_root != ""
         is_bwd_path = flow_bwd_root is not None and flow_bwd_root != ""
         self.use_flow_file = is_fwd_path and is_bwd_path
+        self.pixpro_frame = pixpro_frame
+        if pixpro_frame is None or self.use_flow_frames:
+            self.pixpro_frame = n_frames
+        if self.pixpro_frame > n_frames:
+            self.pixpro_frame = n_frames
 
     def __getitem__(self, index):
         """
@@ -451,18 +456,32 @@ class ImageFolder(DatasetFolder):
             else:
                 img2 = self.transform(images[-1])
 
-        if self.two_crop and self.use_flow_frames:
-            is_two_trans = isinstance(self.transform, tuple)
-            is_two_trans = is_two_trans and len(self.transform) == 2
+        is_two_trans = isinstance(self.transform, tuple)
+        is_two_trans = is_two_trans and len(self.transform) == 2
+        is_img_list = self.use_flow_frames or len(images) > 1
+        is_img_list = is_img_list and self.two_crop
+        if is_img_list:
+            pixpro_frame = self.pixpro_frame
             img_list, coord_list = [], []
             img2_list, coord2_list = [], []
-            if len(images) > 2:
+            if pixpro_frame >= 1:
+                if is_two_trans:
+                    tmp_img2 = self.transform[1](images[0])
+                else:
+                    tmp_img2 = self.transform(images[0])
                 if isinstance(img, tuple):
                     img_list.append(img[0])
                     coord_list.append(img[1])
+                    img2_list.append(tmp_img2[0])
+                    coord2_list.append(tmp_img2[1])
                 else:
                     img_list.append(img)
-                for l_img in images[1:-1]:
+                    img2_list.append(tmp_img2)
+            if len(images) > 2:
+                l_pixpro_frame = pixpro_frame - 2
+                for pix_idx, l_img in enumerate(images[1:-1]):
+                    if l_pixpro_frame < pix_idx + 1:
+                        break
                     if is_two_trans:
                         tmp_img = self.transform[0](l_img)
                         tmp_img2 = self.transform[1](l_img)
@@ -479,10 +498,18 @@ class ImageFolder(DatasetFolder):
                         coord2_list.append(tmp_coord2)
                     img_list.append(tmp_img)
                     img2_list.append(tmp_img2)
+            if pixpro_frame >= 2:
+                if is_two_trans:
+                    tmp_img = self.transform[0](images[-1])
+                else:
+                    tmp_img = self.transform(images[-1])
                 if isinstance(img2, tuple):
+                    img_list.append(tmp_img[0])
+                    coord_list.append(tmp_img[1])
                     img2_list.append(img2[0])
                     coord2_list.append(img2[1])
                 else:
+                    img_list.append(tmp_img)
                     img2_list.append(img2)
 
         if self.use_flow_file and self.two_crop:
@@ -504,7 +531,7 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 img2, coord2 = img2
                 out_data = [img, img2, coord, coord2, index, target, orig_imgs]
-                if self.use_flow_frames:
+                if len(img_list) > 0:
                     out_data.extend([img_list, img2_list, coord_list, coord2_list])
                 return out_data
             else:
@@ -517,7 +544,7 @@ class ImageFolder(DatasetFolder):
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
                 out_data = [img, img2, index, target, orig_imgs]
-                if self.use_flow_frames:
+                if len(img_list) > 0:
                     out_data.extend([img_list, img2_list])
                 return out_data
             else:

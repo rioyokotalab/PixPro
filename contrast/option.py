@@ -25,6 +25,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--image-size', nargs=2, type=int, default=[224, 224], help='image crop size')
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
     parser.add_argument('--n-frames', type=int, default=1, help='num of frames to load if dataset is video')
+    parser.add_argument('--pixpro-frames', type=int, default=1, help='num of frames to apply simple pixpro')
 
     # RAFT
     parser.add_argument('--use_flow', action='store_true')
