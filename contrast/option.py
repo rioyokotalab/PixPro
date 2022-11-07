@@ -26,6 +26,7 @@ def parse_option(stage='pre-train'):
     parser.add_argument('--num-workers', type=int, default=4, help='num of workers per GPU to use')
     parser.add_argument('--n-frames', type=int, default=1, help='num of frames to load if dataset is video')
     parser.add_argument('--pixpro-frames', type=int, default=1, help='num of frames to apply simple pixpro')
+    parser.add_argument('--use-data-divide', type=int, default=1, help='use data num divide. ex. if 4, num = all num // 4')
 
     # RAFT
     parser.add_argument('--use_flow', action='store_true')

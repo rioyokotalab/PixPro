@@ -37,7 +37,7 @@ def find_classes(dir):
 
 
 def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1,
-                 flow_file_root_list=["", ""]):
+                 flow_file_root_list=["", ""], use_data_d=1):
     images = []
     dir = os.path.expanduser(dir)
     for target in sorted(os.listdir(dir)):
@@ -59,6 +59,9 @@ def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1,
         if is_bdd100k:
             images.append(videos)
 
+    use_num = len(images) // use_data_d
+    images = random.sample(images, use_num)
+
     if is_bdd100k:
         images = VideoSample(images, n_frames=n_frames,
                              flow_file_root_list=flow_file_root_list)
@@ -67,7 +70,7 @@ def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1,
 
 
 def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet',
-                          n_frames=1, flow_file_root_list=["", ""]):
+                          n_frames=1, flow_file_root_list=["", ""], use_data_d=1):
     images = []
 
     # make COCO dataset
@@ -111,9 +114,13 @@ def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet',
 
             images.append(item)
 
+    if len(videos) > 0:
+        images.append(videos)
+
+    use_num = len(images) // use_data_d
+    images = random.sample(images, use_num)
+
     if is_bdd100k:
-        if len(videos) > 0:
-            images.append(videos)
         images = VideoSample(images, n_frames=n_frames,
                              flow_file_root_list=flow_file_root_list)
 
@@ -207,12 +214,13 @@ class DatasetFolder(data.Dataset):
 
     def __init__(self, root, loader, extensions, ann_file='', img_prefix='',
                  transform=None, target_transform=None, cache_mode="no",
-                 dataset='ImageNet', n_frames=1, flow_file_root_list=["", ""]):
+                 dataset='ImageNet', n_frames=1, flow_file_root_list=["", ""],
+                 use_data_d=1):
         # image folder mode
         if ann_file == '':
             _, class_to_idx = find_classes(root)
             samples = make_dataset(root, class_to_idx, extensions, dataset == "bdd100k",
-                                   n_frames, flow_file_root_list)
+                                   n_frames, flow_file_root_list, use_data_d)
         # zip mode
         else:
             samples = make_dataset_with_ann(os.path.join(root, ann_file),
@@ -220,7 +228,8 @@ class DatasetFolder(data.Dataset):
                                             extensions,
                                             dataset,
                                             n_frames,
-                                            flow_file_root_list)
+                                            flow_file_root_list,
+                                            use_data_d)
 
         if len(samples) == 0:
             raise(RuntimeError("Found 0 files in subfolders of: " + root + "\n"
@@ -396,7 +405,8 @@ class ImageFolder(DatasetFolder):
                  target_transform=None, loader=default_img_loader,
                  cache_mode="no", dataset='ImageNet', two_crop=False,
                  return_coord=False, n_frames=1, flow_file_root_list=["", ""],
-                 use_flow_frames=False, debug=False, pixpro_frame=None):
+                 use_flow_frames=False, debug=False, pixpro_frame=None,
+                 use_data_d=1):
         if n_frames > 1 and dataset == "bdd100k":
             loader = default_imgs_loader
         super(ImageFolder, self).__init__(root, loader, IMG_EXTENSIONS,
@@ -405,7 +415,8 @@ class ImageFolder(DatasetFolder):
                                           target_transform=target_transform,
                                           cache_mode=cache_mode, dataset=dataset,
                                           n_frames=n_frames,
-                                          flow_file_root_list=flow_file_root_list)
+                                          flow_file_root_list=flow_file_root_list,
+                                          use_data_d=use_data_d)
         self.imgs = self.samples
         self.two_crop = two_crop
         self.return_coord = return_coord
