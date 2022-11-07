@@ -542,7 +542,7 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 img2, coord2 = img2
                 out_data = [img, img2, coord, coord2, index, target, orig_imgs]
-                if len(img_list) > 0:
+                if is_img_list and len(img_list) > 0:
                     out_data.extend([img_list, img2_list, coord_list, coord2_list])
                 return out_data
             else:
@@ -555,7 +555,7 @@ class ImageFolder(DatasetFolder):
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
                 out_data = [img, img2, index, target, orig_imgs]
-                if len(img_list) > 0:
+                if is_img_list and len(img_list) > 0:
                     out_data.extend([img_list, img2_list])
                 return out_data
             else:
