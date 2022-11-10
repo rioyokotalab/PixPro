@@ -21,9 +21,9 @@ def dist_setup():
     method = "tcp://{}:{}".format(master_addr, master_port)
     rank = int(os.getenv("OMPI_COMM_WORLD_RANK", "0"))
     world_size = int(os.getenv("OMPI_COMM_WORLD_SIZE", "1"))
-    local_rank = int(os.getenv("OMPI_COMM_WORLD_LOCAL_RANK", "-1"))
-    local_size = int(os.getenv("OMPI_COMM_WORLD_LOCAL_SIZE", "-2"))
-    node_rank = int(os.getenv("OMPI_COMM_WORLD_NODE_RANK", "-3"))
+    local_rank = int(os.getenv("OMPI_COMM_WORLD_LOCAL_RANK", "0"))
+    local_size = int(os.getenv("OMPI_COMM_WORLD_LOCAL_SIZE", "1"))
+    node_rank = int(os.getenv("OMPI_COMM_WORLD_NODE_RANK", "0"))
     host_port_str = f"host: {master_addr}, port: {master_port}"
     print(
         "rank: {}, world_size: {}, local_rank: {}, local_size: {}, node_rank: {}, {}"
