@@ -59,8 +59,11 @@ def make_dataset(dir, class_to_idx, extensions, is_bdd100k=False, n_frames=1,
         if is_bdd100k:
             images.append(videos)
 
-    use_num = len(images) // use_data_d
-    images = random.sample(images, use_num)
+    if use_data_d > 1:
+        use_num = len(images) // use_data_d
+        images = random.sample(images, use_num)
+    torch.cuda.empty_cache()
+    print(f"rank: {dist.get_rank()} make dataset {len(images)}")
 
     if is_bdd100k:
         images = VideoSample(images, n_frames=n_frames,
@@ -117,8 +120,11 @@ def make_dataset_with_ann(ann_file, img_prefix, extensions, dataset='ImageNet',
     if len(videos) > 0:
         images.append(videos)
 
-    use_num = len(images) // use_data_d
-    images = random.sample(images, use_num)
+    if use_data_d > 1:
+        use_num = len(images) // use_data_d
+        images = random.sample(images, use_num)
+    torch.cuda.empty_cache()
+    print(f"rank: {dist.get_rank()} make dataset {len(images)}")
 
     if is_bdd100k:
         images = VideoSample(images, n_frames=n_frames,
