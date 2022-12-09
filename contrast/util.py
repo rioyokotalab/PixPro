@@ -273,7 +273,8 @@ def forward_backward_consistency(flow_fwd, flow_bwd, coords0=None, alpha_1=0.01,
     # coords1 = coords0 + flow_fwd
     # coords1_norm = normalize_coord(coords1)
     coords1_norm = coords0_norm + flow_fwd_norm
-    mask = (torch.abs(coords1_norm[:, 0]) < 1) & (torch.abs(coords1_norm[:, 1]) < 1)
+    # mask = (torch.abs(coords1_norm[:, 0]) < 1) & (torch.abs(coords1_norm[:, 1]) < 1)
+    mask = (torch.abs(coords1_norm[:, 0]) <= 1) & (torch.abs(coords1_norm[:, 1]) <= 1)
 
     flow_bwd_interpolate_norm = F.grid_sample(flow_bwd_norm, coords1_norm.permute(0, 2, 3, 1), align_corners=True)
     flow_cycle_norm = flow_fwd_norm + flow_bwd_interpolate_norm

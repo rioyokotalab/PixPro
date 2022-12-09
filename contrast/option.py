@@ -120,4 +120,7 @@ def parse_option(stage='pre-train'):
     if args.debug_epochs is None:
         args.debug_epochs = args.epochs + 1
 
+    if not args.use_flow:
+        args.use_flow_file = False
+
     return args
