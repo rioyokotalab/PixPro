@@ -538,8 +538,7 @@ class ImageFolder(DatasetFolder):
 
         orig_im1 = images[0]
         size = torch.tensor(orig_im1.size[-2:][::-1])
-        num_img = torch.tensor([len(images)])
-        orig_imgs = [size, num_img]
+        orig_imgs = [size]
         if not self.use_flow_file or self.debug or not self.two_crop:
             orig_imgs.extend([load_img_for_raft(image) for image in images])
 

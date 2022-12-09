@@ -26,7 +26,6 @@ from contrast.lars import add_weight_decay, LARS
 
 from contrast.flow import RAFT
 # from contrast.flow import InputPadder
-from contrast.util import apply_optical_flow
 from contrast import util
 
 try:
@@ -222,7 +221,7 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
         data = tmp_list.copy()
 
         if args.use_flow:
-            flow_fwd, flow_bwd = apply_optical_flow(data, flow_model, args)
+            flow_fwd, flow_bwd = util.apply_optical_flow(data, flow_model, args)
             flow_fwd_tmp, size, mask_fwd = flow_fwd
             flow_bwd_tmp, _, mask_bwd = flow_bwd
             is_list_mask = isinstance(mask_fwd, list)

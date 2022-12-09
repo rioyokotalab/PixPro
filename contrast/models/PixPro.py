@@ -163,23 +163,27 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
         out_path, out_path_center, color, test_imgs, img1, img2, calc_flow_list, out_path_pos = outs
         # print(color, "color")
 
-    if not is_calc_flow:
-        # [bs, 7, 7]
-        center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
-        center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
-        center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
-        center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
-        center_q_x = center_q_x * (W_orig - 1)
-        center_q_y = center_q_y * (H_orig - 1)
-        center_k_x = center_k_x * (W_orig - 1)
-        center_k_y = center_k_y * (H_orig - 1)
+    center_q_x = (x_array + 0.5) * q_bin_width + q_start_x
+    center_q_y = (y_array + 0.5) * q_bin_height + q_start_y
+    center_k_x = (x_array + 0.5) * k_bin_width + k_start_x
+    center_k_y = (y_array + 0.5) * k_bin_height + k_start_y
+    center_q_x = center_q_x * (W_orig - 1)
+    center_q_y = center_q_y * (H_orig - 1)
+    center_k_x = center_k_x * (W_orig - 1)
+    center_k_y = center_k_y * (H_orig - 1)
 
-        if is_debug:
-            q_x = center_q_x.clone()
-            q_y = center_q_y.clone()
-            k_x = center_k_x.clone()
-            k_y = center_k_y.clone()
+    if is_debug:
+        q_x = center_q_x.clone()
+        q_y = center_q_y.clone()
+        k_x = center_k_x.clone()
+        k_y = center_k_y.clone()
 
+    if is_calc_flow:
+        center_q_x, center_q_y, mask_fwd = add_optical_flow(flow_fwd, center_q_x,
+                                                            center_q_y, size, mask)
+
+    if is_debug:
+        if not is_calc_flow:
             # debug
             debug_utils.debug_calc_grid(x_array, y_array, q_start_x, q_start_y,
                                         k_start_x, k_start_y, q_bin_width,
@@ -188,19 +192,7 @@ def regression_loss(q, k, coord_q, coord_k, pos_ratio=0.5):
                                         center_k_x, center_k_y, test_imgs, img1,
                                         img2, out_path, out_path_center, color,
                                         W_orig, H_orig)
-    else:
-        q_x = (x_array + 0.5) * q_bin_width + q_start_x
-        q_y = (y_array + 0.5) * q_bin_height + q_start_y
-        k_x = (x_array + 0.5) * k_bin_width + k_start_x
-        k_y = (y_array + 0.5) * k_bin_height + k_start_y
-        q_x = q_x * (W_orig - 1)
-        q_y = q_y * (H_orig - 1)
-        k_x = k_x * (W_orig - 1)
-        k_y = k_y * (H_orig - 1)
-        center_q_x, center_q_y, mask_fwd = add_optical_flow(flow_fwd, q_x, q_y, size, mask)
-        center_k_x, center_k_y = k_x.clone(), k_y.clone()
-
-        if is_debug:
+        else:
             # debug
             out_path_flo, out_path_center_flo = calc_flow_list  # debug
             debug_utils.debug_calc_grid(x_array, y_array, q_start_x, q_start_y,

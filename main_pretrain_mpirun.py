@@ -2,7 +2,6 @@ import os
 
 import torch
 import torch.distributed as dist
-from torch.backends import cudnn
 
 from contrast.option import parse_option
 

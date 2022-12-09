@@ -2,7 +2,8 @@
 *.out
 *.o*
 .idea/
-data/
+data/*
+data
 dataset/
 output*/
 ckpts/
@@ -12,11 +13,10 @@ ckpts/
 *.jpg
 tmp*.py
 *.pdf
-!contrast/data
+!contrast/data/
 wandb/
 jobs/
 output
-data
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

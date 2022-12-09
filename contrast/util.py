@@ -102,13 +102,14 @@ def calc_optical_flow(imgs, flow_model, up=False, verbose=False):
     return flow_fwds, flow_bwds
 
 
+@torch.no_grad()
 def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
-    if not use_flow_frames:
+    num_flow = flow_bwds.shape[0]
+    if not use_flow_frames or num_flow <= 1:
         flow_fwd = concat_flow(flow_fwds, is_norm)
         flow_bwd = concat_flow(flow_bwds, is_norm)
         return flow_fwd, flow_bwd
 
-    num_flow = flow_bwds.shape[0]
     tmp_fwd_list, tmp_bwd_list = [], []
     for i in range(num_flow):
         flow_frame_num = i + 1
@@ -126,11 +127,11 @@ def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
     return flow_fwd, flow_bwd
 
 
+@torch.no_grad()
 def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
     orig_im1 = orig_imgs[0]
-    num_img = len(orig_imgs)
     bs = orig_im1.shape[0]
-    is_use_flow_frames = args.use_flow_frames and num_img > 2
+    is_use_flow_frames = args.use_flow_frames
     # to reduce memory usage
     flow_fwds, flow_bwds = [], []
     flow_bs = 8
@@ -165,66 +166,52 @@ def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
     # flow_fwd, flow_bwd = calc_optical_flow(orig_im1, orig_im2, flow_model)
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
-    if ndim == 4:
-        flow_fwd = flow_fwd.unsqueeze(0)
-        flow_bwd = flow_bwd.unsqueeze(0)
+    return flow_fwd, flow_bwd
+
+
+@torch.no_grad()
+def preprocess_flow_use_file(flow_fwds, flow_bwds, args):
+    is_use_flow_frames = args.use_flow_frames
+    # transpose nb, num, 2, h, w -> num, nb, 2, h, w
+    flow_fwds = flow_fwds.permute(1, 0, 2, 3, 4)
+    flow_bwds = flow_bwds.permute(1, 0, 2, 3, 4)
+    if args.flow_up:
+        num, nb, c, h, w = flow_fwds.shape
+        flow_fwds = upflow8(flow_fwds.reshape(-1, c, h, w))
+        flow_bwds = upflow8(flow_bwds.reshape(-1, c, h, w))
+        _, new_c, new_h, new_w = flow_fwds.shape
+        flow_fwds = flow_fwds.reshape(num, nb, new_c, new_h, new_w)
+        flow_bwds = flow_bwds.reshape(num, nb, new_c, new_h, new_w)
+    flow_fwd, flow_bwd = all_concat_flow(flow_fwds, flow_bwds,
+                                         is_norm=args.flow_cat_norm,
+                                         use_flow_frames=is_use_flow_frames)
+    flow_fwd = flow_fwd.cuda()
+    flow_bwd = flow_bwd.cuda()
     return flow_fwd, flow_bwd
 
 
 @torch.no_grad()
 def apply_optical_flow(data, flow_model, args):
     orig_imgs_tmp = data[6]
-    size, num_img = orig_imgs_tmp[0][0], orig_imgs_tmp[1][0].item()
+    size = orig_imgs_tmp[0][0]
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
-    is_use_flow_frames = args.use_flow_frames and num_img > 2
+    is_use_flow_frames = args.use_flow_frames
     if args.use_flow_file:
         _, flow_fwds, flow_bwds = data[5]
-        # transpose nb, num, 2, h, w -> num, nb, 2, h, w
-        flow_fwds = flow_fwds.permute(1, 0, 2, 3, 4)
-        flow_bwds = flow_bwds.permute(1, 0, 2, 3, 4)
-        if args.flow_up:
-            num, nb, c, h, w = flow_fwds.shape
-            flow_fwds = upflow8(flow_fwds.reshape(-1, c, h, w))
-            flow_bwds = upflow8(flow_bwds.reshape(-1, c, h, w))
-            _, new_c, new_h, new_w = flow_fwds.shape
-            flow_fwds = flow_fwds.reshape(num, nb, new_c, new_h, new_w)
-            flow_bwds = flow_bwds.reshape(num, nb, new_c, new_h, new_w)
-        flow_fwd, flow_bwd = all_concat_flow(flow_fwds, flow_bwds,
-                                             is_norm=args.flow_cat_norm,
-                                             use_flow_frames=is_use_flow_frames)
-        ndim = flow_fwd.ndim
-        flow_fwd = flow_fwd.cuda()
-        flow_bwd = flow_bwd.cuda()
-        if ndim == 4:
-            flow_fwd = flow_fwd.unsqueeze(0)
-            flow_bwd = flow_bwd.unsqueeze(0)
+        flow_fwd, flow_bwd = preprocess_flow_use_file(flow_fwds, flow_bwds, args)
     else:
-        orig_imgs = orig_imgs_tmp[2:]
+        orig_imgs = orig_imgs_tmp[1:]
         # to reduce memory usage
         flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args)
 
+    ndim = flow_fwd.ndim
+    if ndim == 4:
+        flow_fwd = flow_fwd.unsqueeze(0)
+        flow_bwd = flow_bwd.unsqueeze(0)
+
     mask_fwd, mask_bwd = None, None
     if is_mask_flow:
-        mask_fwd, mask_bwd,  = [], []
-        if args.debug:
-            flow_cycle_fwd, flow_cycle_bwd = [], []
-        for l_flow_fwd, l_flow_bwd in zip(flow_fwd, flow_bwd):
-            _, _, l_mask_fwd = forward_backward_consistency(l_flow_fwd, l_flow_bwd, alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
-            _, _, l_mask_bwd = forward_backward_consistency(l_flow_bwd, l_flow_fwd, alpha_1=args.alpha1, alpha_2=args.alpha2, is_norm=args.flow_cat_norm)
-            l_mask_fwd, l_flow_cycle_fwd = l_mask_fwd
-            l_mask_bwd, l_flow_cycle_bwd = l_mask_bwd
-            mask_fwd.append(l_mask_fwd)
-            mask_bwd.append(l_mask_bwd)
-            if args.debug:
-                flow_cycle_fwd.append(l_flow_cycle_fwd)
-                flow_cycle_bwd.append(l_flow_cycle_bwd)
-        mask_fwd = torch.stack(mask_fwd)
-        mask_bwd = torch.stack(mask_bwd)
-        if args.debug:
-            flow_cycle_fwd = torch.stack(flow_cycle_fwd)
-            flow_cycle_bwd = torch.stack(flow_cycle_bwd)
-            mask_fwd = [mask_fwd, flow_cycle_fwd]
-            mask_bwd = [mask_bwd, flow_cycle_bwd]
+        mask_fwd, mask_bwd = calc_mask(flow_fwd, flow_bwd, args)
 
     if args.flow_cat_norm:
         flow_fwd = torch.stack([denormalize_flow(f) for f in flow_fwd])
@@ -246,6 +233,38 @@ def apply_optical_flow(data, flow_model, args):
     flow_fwd = [flow_fwd, size, mask_fwd]
     flow_bwd = [flow_bwd, size, mask_bwd]
     return flow_fwd, flow_bwd
+
+
+@torch.no_grad()
+def calc_mask(flow_fwds, flow_bwds, args):
+    mask_fwd, mask_bwd,  = [], []
+    if args.debug:
+        flow_cycle_fwd, flow_cycle_bwd = [], []
+    for l_flow_fwd, l_flow_bwd in zip(flow_fwds, flow_bwds):
+        _, _, l_mask_fwd = forward_backward_consistency(l_flow_fwd, l_flow_bwd,
+                                                        alpha_1=args.alpha1,
+                                                        alpha_2=args.alpha2,
+                                                        is_norm=args.flow_cat_norm)
+        _, _, l_mask_bwd = forward_backward_consistency(l_flow_bwd, l_flow_fwd,
+                                                        alpha_1=args.alpha1,
+                                                        alpha_2=args.alpha2,
+                                                        is_norm=args.flow_cat_norm)
+        l_mask_fwd, l_flow_cycle_fwd = l_mask_fwd
+        l_mask_bwd, l_flow_cycle_bwd = l_mask_bwd
+        mask_fwd.append(l_mask_fwd)
+        mask_bwd.append(l_mask_bwd)
+        if args.debug:
+            flow_cycle_fwd.append(l_flow_cycle_fwd)
+            flow_cycle_bwd.append(l_flow_cycle_bwd)
+    mask_fwd = torch.stack(mask_fwd)
+    mask_bwd = torch.stack(mask_bwd)
+    if args.debug:
+        flow_cycle_fwd = torch.stack(flow_cycle_fwd)
+        flow_cycle_bwd = torch.stack(flow_cycle_bwd)
+        mask_fwd = [mask_fwd, flow_cycle_fwd]
+        mask_bwd = [mask_bwd, flow_cycle_bwd]
+
+    return mask_fwd, mask_bwd
 
 
 # implement: https://arxiv.org/pdf/1711.07837.pdf
