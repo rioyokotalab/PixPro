@@ -218,23 +218,25 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             else:
                 tmp = item.cuda(non_blocking=True)
             tmp_list.append(tmp)
-        data = tmp_list.copy()
+        data = tmp_list
 
+        mean_n_frames, no_of_r = 1.0, 1.0
+        num_per_frame = torch.tensor([[mean_n_frames, data[0].size(0)]])
         if args.use_flow:
             flow_fwd, flow_bwd = util.apply_optical_flow(data, flow_model, args)
-            flow_fwd_tmp, size, mask_fwd = flow_fwd
+            flow_fwd_tmp, info, mask_fwd = flow_fwd
             flow_bwd_tmp, _, mask_bwd = flow_bwd
+            size, cur_n_frames = info
+            frame_info = util.calc_frame_ratio(cur_n_frames)
+            mean_n_frames, no_of_r, num_per_frame = frame_info
+            flow_fwd = [flow_fwd_tmp, size, mask_fwd]
+            flow_bwd = [flow_bwd_tmp, size, mask_bwd]
             is_list_mask = isinstance(mask_fwd, list)
             mask_fwd_tmp = mask_fwd[0].clone() if is_list_mask else mask_fwd.clone()
             mask_bwd_tmp = mask_bwd[0].clone() if is_list_mask else mask_bwd.clone()
-            if is_list_mask:
-                flow_cycle_fwd_tmp = mask_fwd[1].clone()
-                flow_cycle_bwd_tmp = mask_bwd[1].clone()
-            if is_use_flow_frames:
-                mask_fwd = [m[-1] for m in mask_fwd] if is_list_mask else mask_fwd[-1]
-                mask_bwd = [m[-1] for m in mask_bwd] if is_list_mask else mask_bwd[-1]
-                flow_fwd = [flow_fwd_tmp[-1], size, mask_fwd]
-                flow_bwd = [flow_bwd_tmp[-1], size, mask_bwd]
+            # if is_list_mask:
+            #     flow_cycle_fwd_tmp = mask_fwd[1].clone()
+            #     flow_cycle_bwd_tmp = mask_bwd[1].clone()
             data[2] = [data[2], flow_fwd]
             data[3] = [data[3], flow_bwd]
 
@@ -255,109 +257,6 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
 
         # In PixPro, data[0] -> im1, data[1] -> im2, data[2] -> coord1, data[3] -> coord2
         loss, pos_num_list = model(data[0], data[1], data[2], data[3])
-
-        loss_num = 1
-        # no raft pixpro
-        if len(data) >= 11:
-            pos_num_list_1, pos_num_list_2 = pos_num_list
-            pos_nums_1, pos_means_1 = pos_num_list_1
-            pos_nums_2, pos_means_2 = pos_num_list_2
-            pos_nums_1_list, pos_means_1_list = [pos_nums_1], []
-            pos_nums_2_list, pos_means_2_list = [pos_nums_2], []
-            im1_list, im2_list = data[7], data[8]
-            coord1_list, coord2_list = data[9], data[10]
-            num_img = len(im1_list)
-            # print(f"{loss_num=}, {num_img=} {pos_means_2.shape=}")
-            for img_idx in range(num_img):
-                l_im1, l_im2 = im1_list[img_idx], im2_list[img_idx]
-                l_coord1, l_coord2 = coord1_list[img_idx], coord2_list[img_idx]
-                l_loss, l_pos_num_list = model(l_im1, l_im2, l_coord1, l_coord2,
-                                               is_update_momentum=False)
-                loss += l_loss
-                loss_num += 1
-                with torch.no_grad():
-                    l_pos_num_list_1, l_pos_num_list_2 = l_pos_num_list
-                    l_pos_nums_1, l_pos_means_1 = l_pos_num_list_1
-                    l_pos_nums_2, l_pos_means_2 = l_pos_num_list_2
-                    pos_nums_1_list.append(l_pos_nums_1)
-                    pos_nums_2_list.append(l_pos_nums_2)
-                    pos_means_1_list.append(l_pos_means_1)
-                    pos_means_2_list.append(l_pos_means_2)
-
-            with torch.no_grad():
-                pos_nums_1 = torch.stack(pos_nums_1_list).sum(0)
-                pos_nums_2 = torch.stack(pos_nums_2_list).sum(0)
-                pos_means_1 = [torch.stack(pos_means_1_list).mean(0), pos_means_1]
-                pos_means_2 = [torch.stack(pos_means_2_list).mean(0), pos_means_2]
-                pos_means_1 = torch.stack(pos_means_1).mean(0)
-                pos_means_2 = torch.stack(pos_means_2).mean(0)
-                pos_num_list_1 = [pos_nums_1, pos_means_1]
-                pos_num_list_2 = [pos_nums_2, pos_means_2]
-                pos_num_list = [pos_num_list_1, pos_num_list_2]
-
-        if is_use_flow_frames:
-            assert flow_fwd_tmp.ndim == 5
-            # In PixPro,
-            # data[6] -> orig_imgs, data[7] -> im1_list, data[8] -> im2_list
-            # data[9] -> coord1_list, data[10] -> coord2_list
-            pos_num_list_1, pos_num_list_2 = pos_num_list
-            pos_nums_1, pos_means_1 = pos_num_list_1
-            pos_nums_2, pos_means_2 = pos_num_list_2
-            pos_nums_1_list, pos_means_1_list = [pos_nums_1], []
-            pos_nums_2_list, pos_means_2_list = [pos_nums_2], []
-            im1_list, im2_list = data[7], data[8]
-            coord1_list, coord2_list = data[9], data[10]
-            im1_list, im2_list = im1_list[:-1], im2_list[1:]
-            coord1_list, coord2_list = coord1_list[:-1], coord2_list[1:]
-            num_kind_frame = len(data[6]) - 1
-            flow_id = 0
-            for frame_idx in range(num_kind_frame - 1):
-                l_num_flow = num_kind_frame - frame_idx
-                for loss_idx in range(l_num_flow):
-                    l_im1 = im1_list[loss_idx].clone()
-                    l_im2 = im2_list[loss_idx + frame_idx].clone()
-                    l_coord1 = coord1_list[loss_idx].clone()
-                    l_coord2 = coord2_list[loss_idx + frame_idx].clone()
-                    l_flow_fwd = flow_fwd_tmp[flow_id].clone()
-                    l_flow_bwd = flow_bwd_tmp[flow_id].clone()
-                    if is_mask_flow:
-                        l_mask_fwd = mask_fwd_tmp[flow_id].clone()
-                        l_mask_bwd = mask_bwd_tmp[flow_id].clone()
-                        if is_list_mask:
-                            l_mask_fwd = [l_mask_fwd, flow_cycle_fwd_tmp[flow_id]]
-                            l_mask_bwd = [l_mask_bwd, flow_cycle_bwd_tmp[flow_id]]
-                        l_flow_fwd = [l_flow_fwd, size, l_mask_fwd]
-                        l_flow_bwd = [l_flow_bwd, size, l_mask_bwd]
-                    l_coord1 = [l_coord1, l_flow_fwd]
-                    l_coord2 = [l_coord2, l_flow_bwd]
-                    l_loss, l_pos_num_list = model(l_im1, l_im2, l_coord1, l_coord2,
-                                                   is_update_momentum=False)
-                    loss += l_loss
-                    loss_num += 1
-                    flow_id += 1
-
-                    with torch.no_grad():
-                        l_pos_num_list_1, l_pos_num_list_2 = l_pos_num_list
-                        l_pos_nums_1, l_pos_means_1 = l_pos_num_list_1
-                        l_pos_nums_2, l_pos_means_2 = l_pos_num_list_2
-                        pos_nums_1_list.append(l_pos_nums_1)
-                        pos_nums_2_list.append(l_pos_nums_2)
-                        pos_means_1_list.append(l_pos_means_1)
-                        pos_means_2_list.append(l_pos_means_2)
-
-            with torch.no_grad():
-                pos_nums_1 = torch.stack(pos_nums_1_list).sum(0)
-                pos_nums_2 = torch.stack(pos_nums_2_list).sum(0)
-                pos_means_1 = [torch.stack(pos_means_1_list).mean(0), pos_means_1]
-                pos_means_2 = [torch.stack(pos_means_2_list).mean(0), pos_means_2]
-                pos_means_1 = torch.stack(pos_means_1).mean(0)
-                pos_means_2 = torch.stack(pos_means_2).mean(0)
-                pos_num_list_1 = [pos_nums_1, pos_means_1]
-                pos_num_list_2 = [pos_nums_2, pos_means_2]
-                pos_num_list = [pos_num_list_1, pos_num_list_2]
-
-        # print(f"{loss_num=}, {args.pixpro_frames=}")
-        loss = loss / loss_num
 
         # backward
         optimizer.zero_grad()
@@ -403,12 +302,20 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                 f'Time {batch_time.val:.3f} ({batch_time.avg:.3f})  '
                 f'lr {lr:.3f}  '
                 f'loss {loss_meter.val:.3f} ({loss_meter.avg:.3f}) [{loss_plus:.3f}] '
+                f'Mean frames {mean_n_frames:.3f} ({no_of_r:07.3%}) '
                 f'pos_num {pos_num:.4g} ({pos_mean:07.3%}) '
                 f'{mask_ratio_str} {max_mem_str}')
 
         if args.debug:
             continue
 
+        name_frame = "mean_n_frames"
+        name_no_of = "no_optical_flow_ratio"
+        name_frame_infos = []
+        for i in range(num_per_frame.size(0)):
+            ratio_s = f"{name_frame}/frame_{i+1}"
+            cnt_s = f"cnt_n_frames/frame_{i+1}"
+            name_frame_infos.append([ratio_s, cnt_s])
         name_pos_num, name_pos_mean = "positive_pair/num", "positive_pair/avg"
         name_pos_num_1, name_pos_mean_1 = f"{name_pos_num}/1", f"{name_pos_mean}/1"
         name_pos_num_2, name_pos_mean_2 = f"{name_pos_num}/2", f"{name_pos_mean}/2"
@@ -421,6 +328,13 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
             summary_writer.add_scalar('loss', loss_meter.val, step)
             summary_writer.add_scalar('loss/plus', loss_plus, step)
             summary_writer.add_scalar('time', batch_time.val, step)
+            summary_writer.add_scalar(name_frame, mean_n_frames, step)
+            summary_writer.add_scalar(name_no_of, no_of_r, step)
+            for f_info, f_info_s in zip(num_per_frame, name_frame_infos):
+                name_mean, name_cnt = f_info_s
+                mean_info, cnt_info = f_info
+                summary_writer.add_scalar(name_mean, mean_info, step)
+                summary_writer.add_scalar(name_cnt, cnt_info, step)
             summary_writer.add_scalar(name_pos_num, pos_num, step)
             summary_writer.add_scalar(name_pos_mean, pos_mean, step)
             summary_writer.add_scalar(name_pos_num_1, pos_num_1, step)
@@ -439,9 +353,15 @@ def train(epoch, train_loader, model, optimizer, scheduler, args, summary_writer
                           "loss/plus": loss_plus, "epoch": epoch - 1,
                           "global_step": step, "time": batch_time.val,
                           "time/avg": batch_time.avg,
+                          name_frame: mean_n_frames, name_no_of: no_of_r,
                           name_pos_num: pos_num, name_pos_mean: pos_mean,
                           name_pos_num_1: pos_num_1, name_pos_mean_1: pos_mean_1,
                           name_pos_num_2: pos_num_2, name_pos_mean_2: pos_mean_2}
+            for f_info, f_info_s in zip(num_per_frame, name_frame_infos):
+                name_mean, name_cnt = f_info_s
+                mean_info, cnt_info = f_info
+                wandb_dict[name_mean] = mean_info
+                wandb_dict[name_cnt] = cnt_info
             if is_mask_flow:
                 wandb_dict[name_mask] = r
                 wandb_dict[name_fwd] = r_fwd

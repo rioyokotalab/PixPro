@@ -103,35 +103,46 @@ def calc_optical_flow(imgs, flow_model, up=False, verbose=False):
 
 
 @torch.no_grad()
-def all_concat_flow(flow_fwds, flow_bwds, is_norm=False, use_flow_frames=True):
-    num_flow = flow_bwds.shape[0]
-    if not use_flow_frames or num_flow <= 1:
-        flow_fwd = concat_flow(flow_fwds, is_norm)
-        flow_bwd = concat_flow(flow_bwds, is_norm)
-        return flow_fwd, flow_bwd
+def all_concat_flow(flow_fwds, flow_bwds, is_norm=False,
+                    flow_infos=torch.tensor([0, 0])):
+    assert isinstance(flow_infos, torch.Tensor)
+    num, nb, c, h, w = flow_fwds.shape
+    cur_info_ndim = flow_infos.ndim
+    if cur_info_ndim == 1:
+        if flow_infos[1] == 0:
+            flow_infos[1] = num
+        flow_infos = flow_infos.repeat(nb, 1)
 
-    tmp_fwd_list, tmp_bwd_list = [], []
-    for i in range(num_flow):
-        flow_frame_num = i + 1
-        l_num_flow = num_flow - flow_frame_num + 1
-        for fwd_s_idx in range(l_num_flow):
-            fwd_next_idx = fwd_s_idx + flow_frame_num
-            bwd_next_idx = num_flow - fwd_s_idx
-            bwd_s_idx = bwd_next_idx - flow_frame_num
-            tmp_fwd = concat_flow(flow_fwds[fwd_s_idx:fwd_next_idx], is_norm)
-            tmp_bwd = concat_flow(flow_bwds[bwd_s_idx:bwd_next_idx], is_norm)
-            tmp_fwd_list.append(tmp_fwd)
-            tmp_bwd_list.append(tmp_bwd)
-    flow_fwd = torch.stack(tmp_fwd_list)
-    flow_bwd = torch.stack(tmp_bwd_list)
+    flow_fwd, flow_bwd = [], []
+    for bs_idx, flow_info in enumerate(flow_infos):
+        l_s_idx, cur_n_frame = flow_info[0].item(), flow_info[1].item()
+
+        if cur_n_frame == 1:  # no optical flow
+            flow_fwd.append(torch.zeros(1, 2, h, w).cuda())
+            flow_bwd.append(torch.zeros(1, 2, h, w).cuda())
+            continue
+
+        cur_flow_frame = cur_n_frame - 1
+        fwd_s_idx = l_s_idx
+        fwd_e_idx = l_s_idx + cur_flow_frame
+        bwd_e_idx = num - l_s_idx
+        bwd_s_idx = bwd_e_idx - cur_flow_frame
+        assert fwd_e_idx <= num
+        l_flow_fwds = flow_fwds[fwd_s_idx:fwd_e_idx, bs_idx:bs_idx+1]
+        l_flow_bwds = flow_bwds[bwd_s_idx:bwd_e_idx, bs_idx:bs_idx+1]
+        l_flow_fwd = concat_flow(l_flow_fwds, is_norm)
+        l_flow_bwd = concat_flow(l_flow_bwds, is_norm)
+        flow_fwd.append(l_flow_fwd)
+        flow_bwd.append(l_flow_bwd)
+    flow_fwd, flow_bwd = torch.cat(flow_fwd), torch.cat(flow_bwd)
     return flow_fwd, flow_bwd
 
 
 @torch.no_grad()
-def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
+def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args,
+                                 flow_infos=torch.tensor([0, 0])):
     orig_im1 = orig_imgs[0]
     bs = orig_im1.shape[0]
-    is_use_flow_frames = args.use_flow_frames
     # to reduce memory usage
     flow_fwds, flow_bwds = [], []
     flow_bs = 8
@@ -144,7 +155,7 @@ def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
                                                up=args.flow_up, verbose=args.verbose)
         flow_fwd, flow_bwd = all_concat_flow(flow_fwd, flow_bwd,
                                              is_norm=args.flow_cat_norm,
-                                             use_flow_frames=is_use_flow_frames)
+                                             flow_infos=flow_infos)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     for i in range(s_index, bs, flow_bs):
@@ -155,7 +166,7 @@ def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
                                                up=args.flow_up, verbose=args.verbose)
         flow_fwd, flow_bwd = all_concat_flow(flow_fwd, flow_bwd,
                                              is_norm=args.flow_cat_norm,
-                                             use_flow_frames=is_use_flow_frames)
+                                             flow_infos=flow_infos)
         flow_fwds.append(flow_fwd)
         flow_bwds.append(flow_bwd)
     ndim = flow_fwds[0].ndim
@@ -170,8 +181,8 @@ def mem_reduce_calc_optical_flow(orig_imgs, flow_model, args):
 
 
 @torch.no_grad()
-def preprocess_flow_use_file(flow_fwds, flow_bwds, args):
-    is_use_flow_frames = args.use_flow_frames
+def preprocess_flow_use_file(flow_fwds, flow_bwds, args,
+                             flow_infos=torch.tensor([0, 0])):
     # transpose nb, num, 2, h, w -> num, nb, 2, h, w
     flow_fwds = flow_fwds.permute(1, 0, 2, 3, 4)
     flow_bwds = flow_bwds.permute(1, 0, 2, 3, 4)
@@ -184,7 +195,7 @@ def preprocess_flow_use_file(flow_fwds, flow_bwds, args):
         flow_bwds = flow_bwds.reshape(num, nb, new_c, new_h, new_w)
     flow_fwd, flow_bwd = all_concat_flow(flow_fwds, flow_bwds,
                                          is_norm=args.flow_cat_norm,
-                                         use_flow_frames=is_use_flow_frames)
+                                         flow_infos=flow_infos)
     flow_fwd = flow_fwd.cuda()
     flow_bwd = flow_bwd.cuda()
     return flow_fwd, flow_bwd
@@ -194,76 +205,47 @@ def preprocess_flow_use_file(flow_fwds, flow_bwds, args):
 def apply_optical_flow(data, flow_model, args):
     orig_imgs_tmp = data[6]
     size = orig_imgs_tmp[0][0]
+    flow_infos = orig_imgs_tmp[1]
+    cur_n_frames = flow_infos[:, 1]
+    info = [size, cur_n_frames]
     is_mask_flow = args.alpha1 is not None and args.alpha2 is not None
-    is_use_flow_frames = args.use_flow_frames
     if args.use_flow_file:
         _, flow_fwds, flow_bwds = data[5]
-        flow_fwd, flow_bwd = preprocess_flow_use_file(flow_fwds, flow_bwds, args)
+        cur_flow_ndim = flow_fwds.ndim
+        if cur_flow_ndim == 5:
+            flow_fwd, flow_bwd = preprocess_flow_use_file(flow_fwds, flow_bwds, args,
+                                                          flow_infos)
+        else:
+            flow_fwd, flow_bwd = flow_fwds.clone(), flow_bwds.clone()
     else:
-        orig_imgs = orig_imgs_tmp[1:]
+        orig_imgs = orig_imgs_tmp[2:]
         # to reduce memory usage
-        flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args)
-
-    ndim = flow_fwd.ndim
-    if ndim == 4:
-        flow_fwd = flow_fwd.unsqueeze(0)
-        flow_bwd = flow_bwd.unsqueeze(0)
+        flow_fwd, flow_bwd = mem_reduce_calc_optical_flow(orig_imgs, flow_model, args,
+                                                          flow_infos)
 
     mask_fwd, mask_bwd = None, None
     if is_mask_flow:
         mask_fwd, mask_bwd = calc_mask(flow_fwd, flow_bwd, args)
 
     if args.flow_cat_norm:
-        flow_fwd = torch.stack([denormalize_flow(f) for f in flow_fwd])
-        flow_bwd = torch.stack([denormalize_flow(f) for f in flow_bwd])
+        flow_fwd = denormalize_flow(flow_fwd)
+        flow_bwd = denormalize_flow(flow_bwd)
 
-    if not is_use_flow_frames:
-        flow_fwd, flow_bwd = flow_fwd[-1], flow_bwd[-1]
-        if mask_fwd is None or mask_bwd is None:
-            if args.debug:
-                mask_fwd, mask_bwd = [None, None], [None, None]
-        else:
-            if isinstance(mask_fwd, list):
-                mask_fwd = [m[-1] for m in mask_fwd]
-                mask_bwd = [m[-1] for m in mask_bwd]
-            else:
-                mask_fwd = mask_fwd[-1]
-                mask_bwd = mask_bwd[-1]
-
-    flow_fwd = [flow_fwd, size, mask_fwd]
-    flow_bwd = [flow_bwd, size, mask_bwd]
+    flow_fwd = [flow_fwd, info, mask_fwd]
+    flow_bwd = [flow_bwd, info, mask_bwd]
     return flow_fwd, flow_bwd
 
 
 @torch.no_grad()
 def calc_mask(flow_fwds, flow_bwds, args):
-    mask_fwd, mask_bwd,  = [], []
-    if args.debug:
-        flow_cycle_fwd, flow_cycle_bwd = [], []
-    for l_flow_fwd, l_flow_bwd in zip(flow_fwds, flow_bwds):
-        _, _, l_mask_fwd = forward_backward_consistency(l_flow_fwd, l_flow_bwd,
-                                                        alpha_1=args.alpha1,
-                                                        alpha_2=args.alpha2,
-                                                        is_norm=args.flow_cat_norm)
-        _, _, l_mask_bwd = forward_backward_consistency(l_flow_bwd, l_flow_fwd,
-                                                        alpha_1=args.alpha1,
-                                                        alpha_2=args.alpha2,
-                                                        is_norm=args.flow_cat_norm)
-        l_mask_fwd, l_flow_cycle_fwd = l_mask_fwd
-        l_mask_bwd, l_flow_cycle_bwd = l_mask_bwd
-        mask_fwd.append(l_mask_fwd)
-        mask_bwd.append(l_mask_bwd)
-        if args.debug:
-            flow_cycle_fwd.append(l_flow_cycle_fwd)
-            flow_cycle_bwd.append(l_flow_cycle_bwd)
-    mask_fwd = torch.stack(mask_fwd)
-    mask_bwd = torch.stack(mask_bwd)
-    if args.debug:
-        flow_cycle_fwd = torch.stack(flow_cycle_fwd)
-        flow_cycle_bwd = torch.stack(flow_cycle_bwd)
-        mask_fwd = [mask_fwd, flow_cycle_fwd]
-        mask_bwd = [mask_bwd, flow_cycle_bwd]
-
+    _, _, mask_fwd = forward_backward_consistency(flow_fwds, flow_bwds,
+                                                  alpha_1=args.alpha1,
+                                                  alpha_2=args.alpha2,
+                                                  is_norm=args.flow_cat_norm)
+    _, _, mask_bwd = forward_backward_consistency(flow_bwds, flow_fwds,
+                                                  alpha_1=args.alpha1,
+                                                  alpha_2=args.alpha2,
+                                                  is_norm=args.flow_cat_norm)
     return mask_fwd, mask_bwd
 
 
@@ -384,3 +366,26 @@ def calc_mask_ratio(mask):
     mask_rev = torch.logical_not(mask)
     r = mask_rev.float().mean(-1).mean(-1)
     return r
+
+
+@torch.no_grad()
+def calc_frame_ratio(cur_n_frames):
+    if cur_n_frames is None:
+        return None, None, None
+    mean_n_frames = cur_n_frames.float().mean()
+    max_n_frame = torch.max(cur_n_frames)
+    cnt_no_of = torch.zeros_like(cur_n_frames, dtype=torch.bool)
+    cnt_no_of[cur_n_frames == 1] = 1
+    # cnt_no_of = torch.count_nonzero(tmp_cnt_no_of).item()
+    no_of_r = cnt_no_of.float().mean()
+
+    num_per_frame = []
+    for i in range(1, max_n_frame + 1):
+        tmp_cnt = torch.zeros_like(cur_n_frames, dtype=torch.bool)
+        tmp_cnt[cur_n_frames == i] = 1
+        cnt = torch.count_nonzero(tmp_cnt).item()
+        mean_frame = tmp_cnt.float().mean()
+        num_per_frame.append(torch.tensor([mean_frame, cnt]))
+    num_per_frame = torch.stack(num_per_frame)
+
+    return mean_n_frames, no_of_r, num_per_frame

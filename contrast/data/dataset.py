@@ -441,6 +441,7 @@ class ImageFolder(DatasetFolder):
             self.pixpro_frame = n_frames
         if self.pixpro_frame > n_frames:
             self.pixpro_frame = n_frames
+        self.n_frames = n_frames
 
     def __getitem__(self, index):
         """
@@ -479,10 +480,10 @@ class ImageFolder(DatasetFolder):
         is_two_trans = is_two_trans and len(self.transform) == 2
         is_img_list = self.use_flow_frames or len(images) > 1
         is_img_list = is_img_list and self.two_crop
+        img_list, coord_list = [], []
+        img2_list, coord2_list = [], []
         if is_img_list:
             pixpro_frame = self.pixpro_frame
-            img_list, coord_list = [], []
-            img2_list, coord2_list = [], []
             if pixpro_frame >= 1:
                 if is_two_trans:
                     tmp_img2 = self.transform[1](images[0])
@@ -531,14 +532,65 @@ class ImageFolder(DatasetFolder):
                     img_list.append(tmp_img)
                     img2_list.append(img2)
 
-        if self.use_flow_file and self.two_crop:
-            fwd_path, bwd_path = flows
-            flow_fwd, flow_bwd = load_flows(fwd_path, bwd_path)
-            target = [target, flow_fwd, flow_bwd]
+        is_of = len(images) > 1
+        len_img = len(img_list)
+        diff_fwd_n_idx, diff_fwd_s_idx = 0, 0
+        if is_img_list and len_img > 0:
+            is_of = bool(random.randint(0, 1))
+            # # select pixpro on 100 / (pixpro_frame + 1) percent
+            # is_pixpro = bool(random.randint(0, self.pixpro_frame))
+            if self.two_crop:
+                assert len_img == len(img2_list)
+            img_idx = random.randint(0, len_img - 1)
+            img2_idx = img_idx
+            if is_of:
+                img2_idx = img_idx + 1
+                if len_img > 1:
+                    idx_tmp_list = [i for i in range(len_img - 1) if i != img_idx]
+                    img2_idx = random.choice(idx_tmp_list)
+                    if img_idx > img2_idx:
+                        img_idx, img2_idx = img2_idx, img_idx
+                    # if img2_idx == len_img - 1:
+                    #     diff_fwd_n_idx = 0
+                    if img2_idx < len_img - 1:
+                        # diff_fwd_n_idx = self.n_frames - 1 - img2_idx
+                        diff_fwd_n_idx = img2_idx + 1 - self.n_frames
+                assert img_idx < img2_idx
+
+            diff_fwd_s_idx = img_idx
+            img = (img_list[img_idx], coord_list[img_idx])
+            if self.two_crop:
+                if img2_idx < len_img:
+                    img2 = (img2_list[img2_idx], coord2_list[img2_idx])
+                # else: # img2_idx >= len_img
+                # not change img2 instance from transform[1]
 
         orig_im1 = images[0]
         size = torch.tensor(orig_im1.size[-2:][::-1])
+        # num_img = torch.tensor([len(images)])
+        # orig_imgs = [size, num_img]
         orig_imgs = [size]
+
+        l_s_idx, cur_n_frame = 0, 1
+        if is_of:  # if no use flow file
+            l_s_idx = diff_fwd_s_idx
+            cur_n_frame = self.n_frames + diff_fwd_n_idx - diff_fwd_s_idx
+
+        if self.use_flow_file and self.two_crop:
+            fwd_path, bwd_path = flows
+            if is_of:
+                _, fwd_s_idx, fwd_n_idx = fwd_path
+                fwd_s_idx = fwd_s_idx + diff_fwd_s_idx
+                fwd_n_idx = fwd_n_idx + diff_fwd_n_idx
+                assert fwd_s_idx < fwd_n_idx
+                # fwd_path[1], fwd_path[2] = fwd_s_idx, fwd_n_idx
+                cur_n_frame = fwd_n_idx - fwd_s_idx + 1
+                l_s_idx = diff_fwd_s_idx
+            flow_fwd, flow_bwd = load_flows(fwd_path, bwd_path)
+            target = [target, flow_fwd, flow_bwd]
+
+        orig_imgs.append(torch.tensor([l_s_idx, cur_n_frame]))
+
         if not self.use_flow_file or self.debug or not self.two_crop:
             orig_imgs.extend([load_img_for_raft(image) for image in images])
 
@@ -549,8 +601,8 @@ class ImageFolder(DatasetFolder):
             if self.two_crop:
                 img2, coord2 = img2
                 out_data = [img, img2, coord, coord2, index, target, orig_imgs]
-                if is_img_list and len(img_list) > 0:
-                    out_data.extend([img_list, img2_list, coord_list, coord2_list])
+                # if is_img_list and len(img_list) > 0:
+                #     out_data.extend([img_list, img2_list, coord_list, coord2_list])
                 return out_data
             else:
                 return img, coord, index, target, orig_imgs
@@ -562,8 +614,8 @@ class ImageFolder(DatasetFolder):
                 if isinstance(img2, tuple):
                     img2, coord2 = img2
                 out_data = [img, img2, index, target, orig_imgs]
-                if is_img_list and len(img_list) > 0:
-                    out_data.extend([img_list, img2_list])
+                # if is_img_list and len(img_list) > 0:
+                #     out_data.extend([img_list, img2_list])
                 return out_data
             else:
                 return img, index, target, orig_imgs
