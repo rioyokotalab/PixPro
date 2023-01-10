@@ -478,83 +478,115 @@ class ImageFolder(DatasetFolder):
 
         is_two_trans = isinstance(self.transform, tuple)
         is_two_trans = is_two_trans and len(self.transform) == 2
-        is_img_list = self.use_flow_frames or len(images) > 1
-        is_img_list = is_img_list and self.two_crop
+        is_img_list = len(images) > 1 and self.two_crop
+        is_img_list = is_img_list and self.pixpro_frame >= 1
+        is_img_list = self.use_flow_frames or is_img_list
         img_list, coord_list = [], []
         img2_list, coord2_list = [], []
         if is_img_list:
             pixpro_frame = self.pixpro_frame
-            if pixpro_frame >= 1:
+            # if pixpro_frame >= 1:
+            if is_two_trans:
+                tmp_img2 = self.transform[1](images[0])
+            else:
+                tmp_img2 = self.transform(images[0])
+            if isinstance(img, tuple):
+                img_list.append(img[0])
+                coord_list.append(img[1])
+                img2_list.append(tmp_img2[0])
+                coord2_list.append(tmp_img2[1])
+            else:
+                img_list.append(img)
+                img2_list.append(tmp_img2)
+            # if len(images) > 2:
+            #     l_pixpro_frame = pixpro_frame - 2
+            for pix_idx, l_img in enumerate(images[1:-1]):
+                # if l_pixpro_frame < pix_idx + 1:
+                #     break
                 if is_two_trans:
-                    tmp_img2 = self.transform[1](images[0])
+                    tmp_img = self.transform[0](l_img)
+                    tmp_img2 = self.transform[1](l_img)
                 else:
-                    tmp_img2 = self.transform(images[0])
-                if isinstance(img, tuple):
-                    img_list.append(img[0])
-                    coord_list.append(img[1])
-                    img2_list.append(tmp_img2[0])
-                    coord2_list.append(tmp_img2[1])
-                else:
-                    img_list.append(img)
-                    img2_list.append(tmp_img2)
-            if len(images) > 2:
-                l_pixpro_frame = pixpro_frame - 2
-                for pix_idx, l_img in enumerate(images[1:-1]):
-                    if l_pixpro_frame < pix_idx + 1:
-                        break
-                    if is_two_trans:
-                        tmp_img = self.transform[0](l_img)
-                        tmp_img2 = self.transform[1](l_img)
-                    else:
-                        tmp_img = self.transform(l_img)
-                        tmp_img2 = self.transform(l_img)
-                    is_tuple = isinstance(tmp_img, tuple)
-                    if self.return_coord:
-                        assert is_tuple
-                    if is_tuple:
-                        tmp_img, tmp_coord = tmp_img
-                        tmp_img2, tmp_coord2 = tmp_img2
-                        coord_list.append(tmp_coord)
-                        coord2_list.append(tmp_coord2)
-                    img_list.append(tmp_img)
-                    img2_list.append(tmp_img2)
-            if pixpro_frame >= 2:
-                if is_two_trans:
-                    tmp_img = self.transform[0](images[-1])
-                else:
-                    tmp_img = self.transform(images[-1])
-                if isinstance(img2, tuple):
-                    img_list.append(tmp_img[0])
-                    coord_list.append(tmp_img[1])
-                    img2_list.append(img2[0])
-                    coord2_list.append(img2[1])
-                else:
-                    img_list.append(tmp_img)
-                    img2_list.append(img2)
+                    tmp_img = self.transform(l_img)
+                    tmp_img2 = self.transform(l_img)
+                is_tuple = isinstance(tmp_img, tuple)
+                if self.return_coord:
+                    assert is_tuple
+                if is_tuple:
+                    tmp_img, tmp_coord = tmp_img
+                    tmp_img2, tmp_coord2 = tmp_img2
+                    coord_list.append(tmp_coord)
+                    coord2_list.append(tmp_coord2)
+                img_list.append(tmp_img)
+                img2_list.append(tmp_img2)
+            # if pixpro_frame >= 2:
+            if is_two_trans:
+                tmp_img = self.transform[0](images[-1])
+            else:
+                tmp_img = self.transform(images[-1])
+            if isinstance(img2, tuple):
+                img_list.append(tmp_img[0])
+                coord_list.append(tmp_img[1])
+                img2_list.append(img2[0])
+                coord2_list.append(img2[1])
+            else:
+                img_list.append(tmp_img)
+                img2_list.append(img2)
+
+            pixpro_frame = len(img_list) if self.use_flow_frames else pixpro_frame
+            if self.two_crop:
+                assert len(img_list) == len(img2_list)
 
         is_of = len(images) > 1
         len_img = len(img_list)
         diff_fwd_n_idx, diff_fwd_s_idx = 0, 0
-        if is_img_list and len_img > 0:
-            is_of = bool(random.randint(0, 1))
+        cur_n_frame = self.n_frames if is_of else 1
+        if is_img_list and pixpro_frame > 0:
+            is_of = bool(random.randint(0, 1)) and is_of
             # # select pixpro on 100 / (pixpro_frame + 1) percent
             # is_pixpro = bool(random.randint(0, self.pixpro_frame))
-            if self.two_crop:
-                assert len_img == len(img2_list)
-            img_idx = random.randint(0, len_img - 1)
+
+            # cur_n_frame = random.randint(2, self.n_frames) if is_of else 1
+            select_nframes = list(range(2, self.n_frames + 1))
+            if pixpro_frame <= 2:
+                select_nframes = [self.n_frames]
+            elif pixpro_frame < len_img:
+                select_nframes = list(range(2, pixpro_frame))
+                select_nframes.append(self.n_frames)
+            cur_n_frame = random.choice(select_nframes) if is_of else 1
+
+            # img_idx = random.randint(0, len_img - 1)
+            tmp_img_idx_list = list(range(len_img))
+            if pixpro_frame == 1:
+                tmp_img_idx_list = [0]
+            elif pixpro_frame == 2:
+                tmp_img_idx_list = [0, len_img - 1]
+            elif pixpro_frame < len_img:
+                tmp_img_idx_list = list(range(pixpro_frame - 1))
+                tmp_img_idx_list.append(len_img - 1)
+            img_idx = random.choice(tmp_img_idx_list)
+
             img2_idx = img_idx
             if is_of:
-                img2_idx = img_idx + 1
-                if len_img > 1:
-                    idx_tmp_list = [i for i in range(len_img - 1) if i != img_idx]
-                    img2_idx = random.choice(idx_tmp_list)
-                    if img_idx > img2_idx:
-                        img_idx, img2_idx = img2_idx, img_idx
-                    # if img2_idx == len_img - 1:
-                    #     diff_fwd_n_idx = 0
-                    if img2_idx < len_img - 1:
-                        # diff_fwd_n_idx = self.n_frames - 1 - img2_idx
-                        diff_fwd_n_idx = img2_idx + 1 - self.n_frames
+                # img2_idx = img_idx + 1
+                # if len_img > 1:
+                #     # idx_tmp_list = [i for i in range(len_img - 1) if i != img_idx]
+                tmp_diff = cur_n_frame - 1
+                idx_tmp_list = [img_idx - tmp_diff, img_idx + tmp_diff]
+                tmp_idx_tmp_list = [i for i in idx_tmp_list if i >= 0 and i < len_img]
+                if len(tmp_idx_tmp_list) <= 0:
+                    tmp_last_diff = img_idx + tmp_diff - len_img + 1
+                    img_idx = img_idx - tmp_last_diff
+                    idx_tmp_list = [img_idx - tmp_diff, img_idx + tmp_diff]
+                idx_tmp_list = [i for i in idx_tmp_list if i >= 0 and i < len_img]
+                img2_idx = random.choice(idx_tmp_list)
+                if img_idx > img2_idx:
+                    img_idx, img2_idx = img2_idx, img_idx
+                # if img2_idx == len_img - 1:
+                #     diff_fwd_n_idx = 0
+                if img2_idx < len_img - 1:
+                    # diff_fwd_n_idx = self.n_frames - 1 - img2_idx
+                    diff_fwd_n_idx = img2_idx + 1 - self.n_frames
                 assert img_idx < img2_idx
 
             diff_fwd_s_idx = img_idx
@@ -571,10 +603,11 @@ class ImageFolder(DatasetFolder):
         # orig_imgs = [size, num_img]
         orig_imgs = [size]
 
-        l_s_idx, cur_n_frame = 0, 1
-        if is_of:  # if no use flow file
+        l_s_idx = 0
+        if is_of:
             l_s_idx = diff_fwd_s_idx
-            cur_n_frame = self.n_frames + diff_fwd_n_idx - diff_fwd_s_idx
+            tmp_cur_n_frame = self.n_frames + diff_fwd_n_idx - diff_fwd_s_idx
+            assert tmp_cur_n_frame == cur_n_frame
 
         if self.use_flow_file and self.two_crop:
             fwd_path, bwd_path = flows
@@ -591,6 +624,7 @@ class ImageFolder(DatasetFolder):
 
         orig_imgs.append(torch.tensor([l_s_idx, cur_n_frame]))
 
+        # if no use flow file
         if not self.use_flow_file or self.debug or not self.two_crop:
             orig_imgs.extend([load_img_for_raft(image) for image in images])
 
