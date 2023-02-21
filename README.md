@@ -181,3 +181,9 @@ Our testbed builds upon several existing publicly available codes. Specifically,
 ## Contributing to the project
 
 Any pull requests or issues are welcomed.
+
+
+## Evaluation code using detectron2 (added on this forked repozitory)
+supported for cityscapes semantic segmentaion, etc..
+- https://github.com/rioyokotalab/detectron2
+
