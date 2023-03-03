@@ -47,7 +47,7 @@ if you want to create quickely, run job by multiprocessing
     :  
     37th node  
     ```shell script
-    bash get_data/create_img.sh <data_path> 6840 1900
+    bash get_data/create_img.sh <data_path> 68401 1900
     ```
 
 
