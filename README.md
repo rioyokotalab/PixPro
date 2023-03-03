@@ -5,6 +5,8 @@ By [Zhenda Xie](https://scholar.google.com/citations?user=0C4cDloAAAAJ)\*, [Yuto
 This repo is an official implementation of ["Propagate Yourself: Exploring Pixel-Level Consistency for Unsupervised Visual Representation Learning"](https://arxiv.org/abs/2011.10043) on PyTorch.
 
 
+[Jump to Instruction added by this fork repository](#instruction-added-by-this-forked-repository) 
+
 ## Introduction
 
 `PixPro` (pixel-to-propagation) is an unsupervised visual feature learning approach by leveraging pixel-level pretext tasks. The learnt feature can be well transferred to downstream dense prediction tasks such as object detection and semantic segmentation. `PixPro` achieves the best transferring performance on Pascal VOC object detection (`60.2 AP` using C4) and COCO object detection (`41.4 / 40.5 mAP` using FPN / C4) with a ResNet-50 backbone.
@@ -183,7 +185,103 @@ Our testbed builds upon several existing publicly available codes. Specifically,
 Any pull requests or issues are welcomed.
 
 
-## Evaluation code using detectron2 (added on this forked repozitory)
+# Instruction added by this forked repository
+
+## Results
+
+### [_PixPro with Optical Flow pre-trained models_](https://drive.google.com/drive/folders/1kRdJwMKecPZvPeNab12IB74J1Gf0cb_e?usp=share_link)
+
+|Epochs|Arch|Frames|Optical Flow|Download|
+|:---:|:---:|:---:|:---:|:---:|
+|2000|ResNet-50|1||[script](tools/pretrain_bdd100k_job_2000ep.sh) \| [model](https://drive.google.com/file/d/1cC-EncqJA55UPeOSJmwl50QdLMmlyCAZ/view?usp=share_link) |
+|2000|ResNet-50|2|:heavy_check_mark:|[script](tools/pretrain_bdd100k_job_2000ep_nframe2_gpu16.sh) \| [model](https://drive.google.com/file/d/1ZdtonuVsUioOpPk3pKoPlg4vWzpBUPbE/view?usp=share_link) |
+|2000|ResNet-50|6|:heavy_check_mark:|[script](tools/pretrain_bdd100k_job_2000ep_nframe6_gpu16.sh) \| [model](https://drive.google.com/file/d/1sUTKAjCO4PkC3zt0tHaH8BippJ1StbAP/view?usp=share_link) |
+<!-- ## [_PixPro with Optical Flow pre-trained models_](https://drive.google.com/drive/folders/1Y-PpTfjofD_OrySYpeqLMHe9AEIqbriL?usp=share_link)
+|2000|ResNet-50|1||[script](tools/pretrain_bdd100k_job_2000ep.sh) \| [model](https://drive.google.com/file/d/11rKnPR8zUu1Ontq4OXMzuwBdhw3I3zPu/view?usp=share_link) |
+|2000|ResNet-50|2|:heavy_check_mark:|[script](tools/pretrain_bdd100k_job_2000ep_nframe2_gpu16.sh) \| [model](https://drive.google.com/file/d/1HQ9IHHzA4z33rP0CDmRhex77uR29-2XC/view?usp=share_link) |
+|2000|ResNet-50|6|:heavy_check_mark:|[script](tools/pretrain_bdd100k_job_2000ep_nframe6_gpu16.sh) \| [model](https://drive.google.com/file/d/1XHwYi0KX9Ui380KcBqTCswOiutiqUeRo/view?usp=share_link) | -->
+
+### _CityScapes Semantic Segmentation_
+
+[config](https://github.com/rioyokotalab/detectron2/blob/dev-v0.6/projects/DeepLab/configs/Cityscapes-SemanticSegmentation/deeplab_v3_R_50_myencoder_mg124_poly_40k_bs8.yaml)
+
+|Method|Epochs|Arch|PreDataset|Frames|mIOU|Download|
+|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+|BYOL|1000|ResNet-50|ImageNet|-|60.0|-|
+|[PixPro](tools/pixpro_base_r50_100ep.sh)|100|ResNet-50|ImageNet|-|58.4|-|
+|[PixPro](tools/pretrain_bdd100k_job_2000ep.sh)|2000|ResNet-50|BDD100k|1|53.0|-|
+|[PixPro with OF (Ours)](tools/tools/pretrain_bdd100k_job_2000ep_nframe6_gpu16.sh)|2000|ResNet-50|BDD100k|6|53.4|-|
+
+## Getting started
+
+### _Requirements_
+
+At present, we have not checked the compatibility of the code with other versions of the packages, so we only recommend the following configuration.
+
+* Python 3.8.6
+* PyTorch == 1.8.2
+* Torchvision == 0.9.2
+* CUDA == 10.2
+* Other dependencies
+
+### _Installation_
+
+We recommand using pyenv virtual env to setup the experimental environments.
+```shell script
+# Create environment
+pyenv virtualenv 3.8.6 pixpro-wt-of-cu102-wandb
+pyenv local pixpro-wt-of-cu102-wandb
+
+# Install PyTorch & Torchvision
+pip install torch==1.8.2 torchvision==0.9.2 torchaudio==0.8.2 --extra-index-url https://download.pytorch.org/whl/lts/1.8/cu102
+
+# Install apex
+git clone https://github.com/NVIDIA/apex
+cd apex
+git checkout 8a7a332539809adcad88546f492945c4e752ff49
+pip install -v --disable-pip-version-check --no-cache-dir --global-option="--cpp_ext" --global-option="--cuda_ext" ./
+cd ..
+
+# Clone repo
+git clone https://github.com/zdaxie/PixPro
+cd ./PixPro
+
+# Create soft link for data
+mkdir data
+ln -s ${ImageNet-Path} ./data/imagenet
+ln -s ${BDD100k-Path} ./data/bdd100k
+
+# Install other requirements
+pip install -r requirements.txt
+```
+
+### _Pretrain with PixPro_
+
+```shell script
+# Train with PixPro base for 2000 epochs.
+bash ./tools/pretrain_bdd100k_job_2000ep_nframe6_gpu16.sh
+```
+
+### _Transfer to CityScapes Semantic Segmentaion_
+
+```bash
+# Convert a pre-trained PixPro model to detectron2's format
+cd transfer/detection
+python convert_pretrain_to_d2.py ${Input-Checkpoint(.pth)} ./output.pkl  
+
+# Install Detectron2
+cd ../../../
+git clone https://github.com/rioyokotalab/detectron2
+cd detectron2
+git checkout dev-v0.6
+pip install -e .
+
+# Train detector with pre-trained PixPro model without finetune
+python train_net.py --config-file Cityscapes-SemanticSegmentation/deeplab_v3_R_50_myencoder_mg124_poly_40k_bs8.yaml --output ./output 
+    --model_path ./output.pkl --no_finetune --num-gpus 4
+```
+
+## Evaluation code using detectron2
 supported for cityscapes semantic segmentaion, etc..
 - https://github.com/rioyokotalab/detectron2
 
