@@ -224,6 +224,10 @@ At present, we have not checked the compatibility of the code with other version
 * CUDA == 10.2
 * Other dependencies
 
+### _PrePare BDD100K_
+
+plese show [this instuction](tools/dataset_prepare/README.md)
+
 ### _Installation_
 
 We recommand using pyenv virtual env to setup the experimental environments.
