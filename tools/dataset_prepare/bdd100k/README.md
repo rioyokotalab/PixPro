@@ -1,14 +1,18 @@
 # Dataset prepareration
 ## BDD100K dataset download and create image from movie
 <data_path> is place of dataset which you determined  
+
 ### requiment
+
 - `parallel`
 - `aria2c` or `wget`
 - `ffmpeg`
+
 ### create dataset using multiprocessing
 if you want to create quickely, run job by multiprocessing  
 <!-- (required command `ybatch` or `qsub` for job command)  -->
 <!-- https://github.com/rioyokotalab/video-representation-learning/tree/main/scripts -->
+
 1. download dataset
 
     ```shell script
@@ -70,3 +74,16 @@ if you don't mind time to create dataset, run following command
 bash process_bdd.sh <data_path>
 ```
 
+## Final data structure
+data structure after completing the above instructions
+
+```shell script
+<data_path>
+ ├── bdd100k
+ |   ├── videos # 1.5TB
+ |   |   ├── train # 1.3TB
+ |   |   ├── val # 184GB
+ |   ├── images # 3.5TB
+ |   |   ├── train # 3.1TB
+ |   |   ├── val # 443GB
+```
