@@ -222,6 +222,8 @@ At present, we have not checked the compatibility of the code with other version
 * PyTorch == 1.8.2
 * Torchvision == 0.9.2
 * CUDA == 10.2
+* NCCL == 2.7.3
+* Open MPI == 4.0.4
 * Other dependencies
 
 ### _PrePare BDD100K_
