@@ -15,15 +15,15 @@
 #### Assumed data structure
 data structure before execution the below instructions
 
-```shell script
+```python
 <data_path>
- ├── bdd100k
- |   ├── videos # 1.5TB
- |   |   ├── train # 1.3TB
- |   |   ├── val # 184GB
- |   ├── images # 3.5TB
- |   |   ├── train # 3.1TB
- |   |   ├── val # 443GB
+ |-- bdd100k
+ |   |-- videos # 1.5TB
+ |   |   |-- train # 1.3TB
+ |   |   |-- val # 184GB
+ |   |-- images # 3.5TB
+ |   |   |-- train # 3.1TB
+ |   |   |-- val # 443GB
 ```
 
 ### create dataset
@@ -49,18 +49,18 @@ data structure before execution the below instructions
 ## Final data structure
 data structure after completing the above instructions
 
-```shell script
+```python
 <data_path>
- ├── bdd100k
- |   ├── videos # 1.5TB
- |   |   ├── train # 1.3TB
- |   |   ├── val # 184GB
- |   ├── images # 3.5TB
- |   |   ├── train # 3.1TB
- |   |   ├── val # 443GB
- |   ├── flow # 5.8TB 
- |   |   ├── pth
- |   |   |   ├── train
- |   |   |   |   ├── forward # 2.9TB
- |   |   |   |   ├── backward # 2.9TB
+ |-- bdd100k
+ |   |-- videos # 1.5TB
+ |   |   |-- train # 1.3TB
+ |   |   |-- val # 184GB
+ |   |-- images # 3.5TB
+ |   |   |-- train # 3.1TB
+ |   |   |-- val # 443GB
+ |   |-- flow # 5.8TB
+ |   |   |-- pth
+ |   |   |   |-- train
+ |   |   |   |   |-- forward # 2.9TB
+ |   |   |   |   |-- backward # 2.9TB
 ```

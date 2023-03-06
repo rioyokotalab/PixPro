@@ -77,13 +77,13 @@ bash process_bdd.sh <data_path>
 ## Final data structure
 data structure after completing the above instructions
 
-```shell script
+```python
 <data_path>
- ├── bdd100k
- |   ├── videos # 1.5TB
- |   |   ├── train # 1.3TB
- |   |   ├── val # 184GB
- |   ├── images # 3.5TB
- |   |   ├── train # 3.1TB
- |   |   ├── val # 443GB
+ |-- bdd100k
+ |   |-- videos # 1.5TB
+ |   |   |-- train # 1.3TB
+ |   |   |-- val # 184GB
+ |   |-- images # 3.5TB
+ |   |   |-- train # 3.1TB
+ |   |   |-- val # 443GB
 ```
