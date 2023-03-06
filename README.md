@@ -228,7 +228,7 @@ At present, we have not checked the compatibility of the code with other version
 
 ### _PrePare BDD100K_
 
-plese show [this instuction](tools/dataset_prepare/README.md)
+plese show [img dataset inst](tools/dataset_prepare/bdd100k/README.md) and [optical flow dataset inst](tools/dataset_prepare/raft_bdd100k/README.md)
 
 ### _Installation_
 
